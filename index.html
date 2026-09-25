@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Nautilus 3D — Real-Time Ocean & Ship Hydrodynamics Simulation</title>
+  <meta name="description" content="A real-time 3D ocean simulation featuring procedural Gerstner wave physics, multi-point hull buoyancy hydrodynamics, wake trails, and dynamic weather presets.">
+  
+  <!-- Modern Typography from Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
+  
+  <link rel="stylesheet" href="css/style.css">
+
+  <!-- Native Browser ES Module Import Map for Three.js -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <!-- WebGL Render Canvas Container -->
+  <div id="canvasContainer"></div>
+
+  <!-- Toast Notification Overlay -->
+  <div id="toast">Welcome Aboard</div>
+
+  <!-- Glassmorphic HUD & Telemetry Overlay -->
+  <div id="hud">
+    <!-- Top Navigation Bar -->
+    <header class="top-bar">
+      <!-- Brand & Project Badge -->
+      <div class="glass-card brand-badge interactive">
+        <span class="brand-icon">⚓</span>
+        <div>
+          <div class="brand-title">NAUTILUS 3D</div>
+          <div class="brand-subtitle">EXPEDITION HYDRODYNAMICS SIM</div>
+        </div>
+      </div>
+
+      <!-- Action & Environment Controls -->
+      <div class="top-actions interactive">
+        <!-- Weather Presets -->
+        <div class="glass-card weather-dock">
+          <button class="weather-btn" data-weather="sunny">☀️ Sunny</button>
+          <button class="weather-btn active" data-weather="sunset">🌅 Sunset</button>
+          <button class="weather-btn" data-weather="storm">⛈️ Storm</button>
+          <button class="weather-btn" data-weather="aurora">✨ Aurora</button>
+        </div>
+
+        <!-- Quick Horn Button -->
+        <button id="hornBtn" class="quick-btn" title="Sound Ship Fog Horn [H]">
+          📯 Horn [H]
+        </button>
+
+        <!-- Audio Mute/Unmute Toggle -->
+        <button id="muteBtn" class="quick-btn" title="Toggle Procedural Audio [M]">
+          🔊 Audio On
+        </button>
+      </div>
+    </header>
+
+    <!-- Bottom Telemetry Dashboard -->
+    <footer class="bottom-bar">
+      <!-- Instrument Cluster -->
+      <div class="telemetry-cluster interactive">
+        <!-- Speedometer -->
+        <div class="glass-card gauge-card">
+          <div class="gauge-header">
+            <span>Speed Log</span>
+            <span class="gauge-unit">KTS</span>
+          </div>
+          <div class="gauge-body">
+            <span id="speedVal" class="gauge-value">0.0</span>
+            <span class="gauge-unit">Knots</span>
+          </div>
+          <div class="gauge-bar-track">
+            <div id="speedBar" class="gauge-bar-fill"></div>
+          </div>
+        </div>
+
+        <!-- Gyro Compass -->
+        <div class="glass-card compass-card">
+          <div class="compass-ring">
+            <div id="compassRose" class="compass-needle"></div>
+          </div>
+          <div>
+            <div class="gauge-header">
+              <span>Heading</span>
+            </div>
+            <div class="gauge-body">
+              <span id="compassDegree" class="gauge-value" style="font-size: 26px;">0°</span>
+              <span id="compassVal" class="gauge-unit">N</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Throttle & Rudder Indicator -->
+        <div class="glass-card gauge-card" style="min-width: 160px;">
+          <div class="gauge-header">
+            <span>Engine Throttle</span>
+            <span id="throttleVal" class="gauge-unit">0%</span>
+          </div>
+          <div class="gauge-bar-track">
+            <div id="throttleBar" class="gauge-bar-fill" style="width: 0%;"></div>
+          </div>
+
+          <div class="gauge-header" style="margin-top: 14px;">
+            <span>Rudder</span>
+            <span id="rudderVal" class="gauge-unit">0° MID</span>
+          </div>
+          <div class="rudder-track">
+            <div id="rudderIndicator" class="rudder-pip"></div>
+          </div>
+        </div>
+
+        <!-- Sea State Telemetry -->
+        <div class="glass-card sea-state-card">
+          <div class="gauge-header" style="margin-bottom: 10px;">
+            <span>Sea State Telemetry</span>
+          </div>
+          <div class="sea-stat-grid">
+            <div class="stat-item">
+              <div class="label">Wave Swell</div>
+              <div id="waveHeightVal" class="val">1.2 m</div>
+            </div>
+            <div class="stat-item">
+              <div class="label">Wind Speed</div>
+              <div id="windSpeedVal" class="val">18 kts</div>
+            </div>
+            <div class="stat-item">
+              <div class="label">Hull Roll</div>
+              <div id="rollVal" class="val">0.0°</div>
+            </div>
+            <div class="stat-item">
+              <div class="label">Hull Pitch</div>
+              <div id="pitchVal" class="val">0.0°</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Camera Mode Selector -->
+      <div class="glass-card cam-dock interactive">
+        <button class="cam-btn active" data-cam="chase">Chase [1]</button>
+        <button class="cam-btn" data-cam="bridge">Bridge [2]</button>
+        <button class="cam-btn" data-cam="orbit">Drone [3]</button>
+        <button class="cam-btn" data-cam="bow">Bow Spray [4]</button>
+      </div>
+    </footer>
+  </div>
+
+  <!-- Keyboard Controls Cheatsheet Hint -->
+  <div class="controls-hint">
+    <span><span class="key-badge">W</span><span class="key-badge">S</span> Throttle</span>
+    <span><span class="key-badge">A</span><span class="key-badge">D</span> Rudder</span>
+    <span><span class="key-badge">H</span> Fog Horn</span>
+    <span><span class="key-badge">Drag</span> Orbit Camera</span>
+    <span><span class="key-badge">Scroll</span> Zoom</span>
+  </div>
+
+  <!-- Mobile Touch Controls -->
+  <div id="touchControls">
+    <!-- Throttle Lever -->
+    <div class="touch-cluster-left">
+      <button id="touchThrottleUp" class="touch-btn">▲</button>
+      <button id="touchThrottleDown" class="touch-btn">▼</button>
+    </div>
+    <!-- Steering Buttons -->
+    <div class="touch-cluster-right">
+      <button id="touchPort" class="touch-btn">◀</button>
+      <button id="touchStbd" class="touch-btn">▶</button>
+    </div>
+  </div>
+
+  <!-- Main ES Module Script -->
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

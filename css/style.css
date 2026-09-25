@@ -1,0 +1,460 @@
+/* Ultra-Premium Glassmorphic Nautical HUD & Interface Styling */
+:root {
+  --bg-deep: #050a12;
+  --glass-panel: rgba(8, 16, 28, 0.65);
+  --glass-border: rgba(255, 255, 255, 0.12);
+  --glass-glow: rgba(0, 212, 255, 0.15);
+  
+  --accent-cyan: #00e5ff;
+  --accent-blue: #0077ff;
+  --accent-gold: #ffaa00;
+  --accent-red: #ff3344;
+  --accent-green: #00ff88;
+  
+  --text-main: #f0f6fc;
+  --text-muted: rgba(240, 246, 252, 0.6);
+  --font-family: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: var(--bg-deep);
+  font-family: var(--font-family);
+  color: var(--text-main);
+  -webkit-font-smoothing: antialiased;
+}
+
+#canvasContainer {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+}
+
+/* ================= HUD ROOT OVERLAY ================= */
+#hud {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 24px 32px;
+}
+
+.interactive {
+  pointer-events: auto;
+}
+
+/* Glassmorphic Panel Primitive */
+.glass-card {
+  background: var(--glass-panel);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid var(--glass-border);
+  border-radius: 18px;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  transition: all 0.25s ease;
+}
+
+/* ================= TOP NAVIGATION BAR ================= */
+.top-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+.brand-badge {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+}
+
+.brand-icon {
+  font-size: 24px;
+  filter: drop-shadow(0 0 10px rgba(0, 229, 255, 0.5));
+}
+
+.brand-title {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: linear-gradient(135deg, #ffffff 30%, var(--accent-cyan));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.brand-subtitle {
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 0.1em;
+}
+
+/* Action Controls (Weather, Horn, Audio) */
+.top-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.weather-dock {
+  display: flex;
+  gap: 6px;
+  padding: 6px;
+}
+
+.weather-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  padding: 8px 14px;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.weather-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-main);
+}
+
+.weather-btn.active {
+  background: rgba(0, 229, 255, 0.16);
+  border-color: rgba(0, 229, 255, 0.45);
+  color: #fff;
+  box-shadow: 0 0 16px rgba(0, 229, 255, 0.3);
+}
+
+.quick-btn {
+  background: var(--glass-panel);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(16px);
+  border-radius: 14px;
+  padding: 8px 16px;
+  color: var(--text-main);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s ease;
+}
+
+.quick-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  transform: translateY(-2px);
+  border-color: var(--accent-cyan);
+}
+
+.quick-btn:active {
+  transform: translateY(0);
+}
+
+/* ================= BOTTOM DASHBOARD ================= */
+.bottom-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  width: 100%;
+}
+
+/* Telemetry Cluster */
+.telemetry-cluster {
+  display: flex;
+  gap: 16px;
+  align-items: flex-end;
+}
+
+.gauge-card {
+  padding: 18px 24px;
+  min-width: 180px;
+}
+
+.gauge-header {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+}
+
+.gauge-body {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.gauge-value {
+  font-size: 38px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  color: #ffffff;
+  font-variant-numeric: tabular-nums;
+}
+
+.gauge-unit {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent-cyan);
+  text-transform: uppercase;
+}
+
+.gauge-bar-track {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-top: 10px;
+}
+
+.gauge-bar-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--accent-blue), var(--accent-cyan));
+  border-radius: 4px;
+  transition: width 0.15s ease-out;
+}
+
+/* Compass Widget */
+.compass-card {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 16px 22px;
+}
+
+.compass-ring {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.18);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.compass-needle {
+  width: 3px;
+  height: 42px;
+  background: linear-gradient(180deg, var(--accent-red) 50%, var(--accent-cyan) 50%);
+  border-radius: 2px;
+  position: absolute;
+  transition: transform 0.1s linear;
+}
+
+/* Rudder Indicator Bar */
+.rudder-track {
+  position: relative;
+  width: 120px;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rudder-pip {
+  position: absolute;
+  width: 10px;
+  height: 14px;
+  background: var(--accent-gold);
+  border-radius: 3px;
+  box-shadow: 0 0 8px var(--accent-gold);
+  transition: transform 0.1s ease-out;
+}
+
+/* Sea State & Attitudes */
+.sea-state-card {
+  padding: 16px 20px;
+}
+
+.sea-stat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.stat-item .label {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 2px;
+}
+
+.stat-item .val {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+/* Camera Bar Switcher */
+.cam-dock {
+  display: flex;
+  gap: 6px;
+  padding: 6px;
+}
+
+.cam-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  padding: 8px 14px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.cam-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.cam-btn.active {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.35);
+  color: #fff;
+}
+
+/* ================= TOAST NOTIFICATION ================= */
+#toast {
+  position: fixed;
+  top: 90px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-20px);
+  padding: 10px 24px;
+  background: rgba(8, 16, 28, 0.82);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(0, 229, 255, 0.35);
+  border-radius: 30px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6), 0 0 24px rgba(0, 229, 255, 0.2);
+  color: #ffffff;
+  font-size: 13.5px;
+  font-weight: 600;
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 100;
+}
+
+#toast.show {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+}
+
+/* ================= CONTROLS INFO CHEATSHEET ================= */
+.controls-hint {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 16px;
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.5);
+  letter-spacing: 0.05em;
+  pointer-events: none;
+}
+
+.key-badge {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #fff;
+  font-weight: 700;
+  margin-right: 4px;
+}
+
+/* ================= MOBILE TOUCH CONTROLS ================= */
+#touchControls {
+  display: none;
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 20;
+}
+
+@media (max-width: 900px), (pointer: coarse) {
+  #touchControls {
+    display: block;
+  }
+  .controls-hint {
+    display: none;
+  }
+  .hud {
+    padding: 16px;
+  }
+}
+
+.touch-cluster-left {
+  position: absolute;
+  bottom: 24px;
+  left: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: auto;
+}
+
+.touch-cluster-right {
+  position: absolute;
+  bottom: 24px;
+  right: 24px;
+  display: flex;
+  gap: 12px;
+  pointer-events: auto;
+}
+
+.touch-btn {
+  width: 68px;
+  height: 68px;
+  border-radius: 20px;
+  background: rgba(12, 24, 40, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(14px);
+  color: #fff;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.touch-btn:active {
+  background: rgba(0, 229, 255, 0.3);
+  transform: scale(0.94);
+}
