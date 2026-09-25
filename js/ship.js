@@ -1,6 +1,7 @@
 // Ultra-Realistic Exploration Mega-Yacht with High-Detail Hydrodynamic Hull,
 // Luxury Teak Decking, Fully Equipped Glass Bridge Helm, and Interactive Nautical Systems
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 // ── 1. PROCEDURAL TEXTURE GENERATORS ──
 
@@ -429,8 +430,14 @@ export class Ship {
     this.anemometer = null;
     this.lightsOn = true;
 
+    // Procedural fallback root
+    this.proceduralRoot = new THREE.Group();
     this.buildShip();
+    this.group.add(this.proceduralRoot);
     this.scene.add(this.group);
+
+    // Load ultra-realistic Blender 3D model
+    this.loadBlenderModel();
   }
 
   buildShip() {
@@ -1276,7 +1283,47 @@ export class Ship {
     this.flag.position.set(0.68, 2.22, -9.3);
     root.add(this.flag);
 
-    this.group.add(root);
+    this.proceduralRoot.add(root);
+  }
+
+  loadBlenderModel() {
+    const loader = new GLTFLoader();
+    loader.load(
+      'assets/models/yacht.glb',
+      (gltf) => {
+        const model = gltf.scene;
+        model.name = 'Blender_Yacht_Model';
+
+        // Traverse and link animated components
+        model.traverse((child) => {
+          if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+          }
+          if (child.name === 'Propeller_L' || child.name === 'Propeller_R') {
+            this.propellers.push(child);
+          }
+          if (child.name === 'Rudder_L' || child.name === 'Rudder_R') {
+            this.rudders.push(child);
+          }
+          if (child.name === 'Radar_Scanner') {
+            this.radarAntennas.push(child);
+          }
+        });
+
+        // Hide procedural fallback geometry now that high-detail Blender model is active
+        if (this.proceduralRoot) {
+          this.proceduralRoot.visible = false;
+        }
+
+        this.group.add(model);
+        console.log('Nautilus 3D: High-detail Blender sport yacht model successfully loaded.');
+      },
+      undefined,
+      (err) => {
+        console.warn('Nautilus 3D: Blender yacht.glb loading fallback to procedural hull:', err);
+      }
+    );
   }
 
   update(dt, throttle, rudderInput, speedKnots, time) {

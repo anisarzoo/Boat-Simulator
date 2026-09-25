@@ -1,5 +1,6 @@
 // Dynamic Marine Wildlife System: Bow-Riding Dolphins & Breaching Humpback Whales
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { sampleOcean } from './gerstner.js';
 
 export class MarineWildlife {
@@ -13,6 +14,67 @@ export class MarineWildlife {
     this.initWhales();
     this.initSpoutParticles();
     this.initSplashParticles();
+
+    // Load ultra-realistic Blender GLTF models for dolphins and whales
+    this.loadBlenderWildlife();
+  }
+
+  loadBlenderWildlife() {
+    const loader = new GLTFLoader();
+
+    // 1. Load Blender Bottlenose Dolphin
+    loader.load(
+      'assets/models/dolphin.glb',
+      (gltf) => {
+        const dolphinTemplate = gltf.scene;
+        dolphinTemplate.traverse((c) => {
+          if (c.isMesh) {
+            c.castShadow = true;
+            c.receiveShadow = true;
+          }
+        });
+
+        for (const d of this.dolphins) {
+          const clone = dolphinTemplate.clone();
+          clone.name = `BlenderDolphin_${d.id}`;
+          while (d.group.children.length > 0) {
+            d.group.remove(d.group.children[0]);
+          }
+          d.group.add(clone);
+          d.tailStock = clone;
+        }
+        console.log('Nautilus 3D: Blender dolphin GLB model successfully applied to pod.');
+      },
+      undefined,
+      (err) => console.warn('Nautilus 3D: Dolphin GLB fallback to procedural:', err)
+    );
+
+    // 2. Load Blender Humpback Whale
+    loader.load(
+      'assets/models/whale.glb',
+      (gltf) => {
+        const whaleTemplate = gltf.scene;
+        whaleTemplate.traverse((c) => {
+          if (c.isMesh) {
+            c.castShadow = true;
+            c.receiveShadow = true;
+          }
+        });
+
+        for (const w of this.whales) {
+          const clone = whaleTemplate.clone();
+          clone.name = `BlenderWhale_${w.id}`;
+          while (w.group.children.length > 0) {
+            w.group.remove(w.group.children[0]);
+          }
+          w.group.add(clone);
+          w.tailStock = clone;
+        }
+        console.log('Nautilus 3D: Blender humpback whale GLB model successfully applied.');
+      },
+      undefined,
+      (err) => console.warn('Nautilus 3D: Whale GLB fallback to procedural:', err)
+    );
   }
 
   // ── 1. HIGH-DETAIL ANATOMICAL PROCEDURAL DOLPHIN MODEL ──

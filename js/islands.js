@@ -1,5 +1,6 @@
 // Archipelago Islands, Sea Stacks, and Historic Coastal Lighthouse with Rotating Fresnel Light Beam
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 export class Archipelago {
   constructor(scene) {
@@ -7,9 +8,12 @@ export class Archipelago {
     this.islands = [];
     this.lighthouseBeams = [];
     this.lighthouseTower = null;
+    this.palmInstances = [];
+    this.rockInstances = [];
 
     this.initIslands();
     this.initLighthouse();
+    this.loadBlenderFoliage();
   }
 
   // ── 1. PROCEDURAL ROCKY ISLAND GEOMETRY GENERATOR ──
@@ -173,11 +177,13 @@ export class Archipelago {
       group.add(frondGroup);
     }
 
+    this.palmInstances.push({ group, height, curveX, curveZ });
     return group;
   }
 
   // ── PROCEDURAL COASTAL BOULDER GENERATOR ──
   createCoastalRock(size = 3.5) {
+    const group = new THREE.Group();
     const geo = new THREE.DodecahedronGeometry(size, 1);
     const pos = geo.attributes.position;
     for (let i = 0; i < pos.count; i++) {
@@ -198,7 +204,72 @@ export class Archipelago {
     const mesh = new THREE.Mesh(geo, matRock);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    return mesh;
+    group.add(mesh);
+
+    this.rockInstances.push({ group, size });
+    return group;
+  }
+
+  loadBlenderFoliage() {
+    const loader = new GLTFLoader();
+
+    // 1. Upgrade Palms to Blender model
+    loader.load(
+      'assets/models/palm_tree.glb',
+      (gltf) => {
+        const palmTemplate = gltf.scene;
+        palmTemplate.traverse((c) => {
+          if (c.isMesh) {
+            c.castShadow = true;
+            c.receiveShadow = true;
+          }
+        });
+
+        for (const item of this.palmInstances) {
+          const clone = palmTemplate.clone();
+          const s = item.height / 10.5;
+          clone.scale.set(s, s, s);
+          clone.rotation.x = item.curveZ * 0.35;
+          clone.rotation.z = -item.curveX * 0.35;
+
+          while (item.group.children.length > 0) {
+            item.group.remove(item.group.children[0]);
+          }
+          item.group.add(clone);
+        }
+        console.log('Nautilus 3D: Blender palm trees successfully populated across archipelago.');
+      },
+      undefined,
+      (err) => console.warn('Nautilus 3D: Palm GLB fallback to procedural:', err)
+    );
+
+    // 2. Upgrade Coastal Boulders to Blender model
+    loader.load(
+      'assets/models/coastal_rock.glb',
+      (gltf) => {
+        const rockTemplate = gltf.scene;
+        rockTemplate.traverse((c) => {
+          if (c.isMesh) {
+            c.castShadow = true;
+            c.receiveShadow = true;
+          }
+        });
+
+        for (const item of this.rockInstances) {
+          const clone = rockTemplate.clone();
+          const s = item.size / 2.5;
+          clone.scale.set(s, s, s);
+
+          while (item.group.children.length > 0) {
+            item.group.remove(item.group.children[0]);
+          }
+          item.group.add(clone);
+        }
+        console.log('Nautilus 3D: Blender coastal rocks successfully placed along beaches.');
+      },
+      undefined,
+      (err) => console.warn('Nautilus 3D: Rock GLB fallback to procedural:', err)
+    );
   }
 
   // ── PROCEDURAL COASTAL BUSH / SHRUB GENERATOR ──
