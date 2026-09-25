@@ -328,33 +328,32 @@ export class MarineWildlife {
   }
 
   initDolphins() {
-    // Pod of 4 playful bow-riding dolphins with choreographed predictable jumping
-    this.podCount = 4;
+    // Dynamic companion pair of 2 autonomous oceanic dolphins (Echo & Cascade)
+    // Never fixed to ship; fully dynamic momentum & parabolic ballistic physics!
+    this.podCount = 2;
     this.dolphins = [];
 
     for (let i = 0; i < this.podCount; i++) {
       const model = this.createDolphinModel();
-      // 2 on port bow wave (-2.8m, -1.4m), 2 on starboard bow wave (+1.4m, +2.8m)
-      const isPort = (i % 2 === 0);
-      const tier = Math.floor(i / 2); // 0 = lead pair, 1 = trail pair
+      const isPort = (i === 0);
       const latSign = isPort ? -1 : 1;
-      const latDist = (tier === 0) ? 2.4 : 3.8;
-      const fwdDist = (tier === 0) ? 13.2 : 10.5;
 
       const dolphin = {
         id: i,
+        name: i === 0 ? 'Echo' : 'Cascade',
         ...model,
-        pos: new THREE.Vector3(0, -1.2, 0),
-        vel: new THREE.Vector3(),
-        offsetLateral: latSign * latDist,
-        offsetForward: fwdDist,
-        phase: i * 1.57, // Smooth phased swimming undulation
-        jumpTimer: 1.2 + i * 2.2, // Predictable staggered jump cadence (1.2s, 3.4s, 5.6s, 7.8s)
-        jumpDuration: 1.4,
-        isJumping: false,
-        jumpProgress: 0,
+        pos: new THREE.Vector3(latSign * 6.5, -1.2, 11.0),
+        vel: new THREE.Vector3(latSign * 1.0, 0, 6.0),
+        preferredSide: latSign * 3.8, // dynamic lateral corridor (-3.8m port, +3.8m stbd)
+        phase: i * Math.PI, // alternating rhythmic swimming stroke
+        jumpTimer: 3.5 + i * 4.2, // initial staggered jump cadence
+        state: 'swim', // 'swim' | 'jump' | 'dive'
+        diveTimer: 0,
         hasSplashedUp: false,
-        hasSplashedDown: false
+        hasSplashedDown: false,
+        pitch: 0,
+        yaw: 0,
+        roll: 0
       };
       this.dolphins.push(dolphin);
       this.scene.add(model.group);
@@ -555,108 +554,153 @@ export class MarineWildlife {
       shipRight.applyQuaternion(shipQuaternion);
     }
 
-    // ── 1. UPDATE DOLPHINS (PREDICTABLE DYNAMIC CHOREOGRAPHY) ──
+    // ── 1. UPDATE DOLPHINS (AUTONOMOUS STEERING & BALLISTIC PARABOLIC JUMPING) ──
     const isSailing = shipSpeedKnots > 3.0;
 
     for (const d of this.dolphins) {
-      d.phase += dt * (isSailing ? 5.2 : 3.0);
-      d.jumpTimer -= dt;
+      // 1. Position always integrates smoothly from velocity (NEVER teleports or lerps rigidly to ship)
+      d.pos.addScaledVector(d.vel, dt);
 
-      // Predictable jump cadence: activates on cadence both when sailing and idling!
-      if (!d.isJumping && d.jumpTimer <= 0) {
-        d.isJumping = true;
-        d.jumpProgress = 0;
-        d.jumpDuration = isSailing ? 1.4 : 1.25;
-        d.hasSplashedUp = false;
-        d.hasSplashedDown = false;
-      }
+      const waveSample = sampleOcean(d.pos.x, d.pos.z, time, 1.0);
 
-      if (d.isJumping) {
-        d.jumpProgress += dt / d.jumpDuration;
-        const jp = d.jumpProgress;
+      if (d.state === 'jump') {
+        // True ballistic parabolic trajectory governed by gravity
+        d.vel.y -= 13.8 * dt;
 
-        // Dynamic water splash triggers
-        if (jp > 0.08 && !d.hasSplashedUp) {
+        // Splashes at breach and re-entry
+        if (!d.hasSplashedUp && d.pos.y > waveSample.height - 0.2) {
           d.hasSplashedUp = true;
-          this.triggerSplash(d.pos, 16);
+          this.triggerSplash(d.pos, 18);
         }
-        if (jp > 0.88 && !d.hasSplashedDown) {
+
+        // Ocean re-entry
+        if (d.vel.y < 0 && d.pos.y <= waveSample.height) {
           d.hasSplashedDown = true;
-          this.triggerSplash(d.pos, 22);
+          this.triggerSplash(d.pos, 24);
+          d.state = 'dive';
+          d.diveTimer = 0.9 + Math.random() * 0.4;
+          d.jumpTimer = 7.0 + Math.random() * 5.0; // Staggered next jump (7-12 seconds)
+          d.vel.y *= 0.3; // Cushion downward momentum on entry
+          d.vel.multiplyScalar(0.82); // Hydrodynamic entry drag
         }
+
+        // Natural ballistic arching: nose up on ascent, arched at peak, nose down diving into sea
+        const horizSpeed = Math.hypot(d.vel.x, d.vel.z);
+        const targetYaw = Math.atan2(d.vel.x, d.vel.z);
+        const targetPitch = Math.atan2(d.vel.y, Math.max(horizSpeed, 0.1));
+        const bankRoll = (d.preferredSide > 0 ? 0.16 : -0.16);
+
+        d.yaw = THREE.MathUtils.lerp(d.yaw, targetYaw, Math.min(1.0, 7.0 * dt));
+        d.pitch = THREE.MathUtils.lerp(d.pitch, targetPitch, Math.min(1.0, 8.0 * dt));
+        d.roll = THREE.MathUtils.lerp(d.roll, bankRoll, Math.min(1.0, 4.0 * dt));
+        d.group.rotation.set(d.pitch, d.yaw, d.roll);
+
+      } else if (d.state === 'dive') {
+        // Smooth subsurface recovery transition after ocean re-entry
+        d.diveTimer -= dt;
+        d.phase += dt * 4.5;
+
+        // Gentle buoyancy guiding dolphin back to cruise depth (~1.1m below surface)
+        const targetCruiseDepth = waveSample.height - 1.1;
+        d.vel.y += (targetCruiseDepth - d.pos.y) * 3.5 * dt;
+        d.vel.y *= Math.pow(0.82, dt * 60);
+
+        d.pitch = THREE.MathUtils.lerp(d.pitch, 0.05, 3.5 * dt);
+        d.yaw = THREE.MathUtils.lerp(d.yaw, Math.atan2(d.vel.x, d.vel.z), Math.min(1.0, 5.0 * dt));
+        d.roll = THREE.MathUtils.lerp(d.roll, 0.0, 3.0 * dt);
+        d.group.rotation.set(d.pitch, d.yaw, d.roll);
+
+        if (d.diveTimer <= 0) {
+          d.state = 'swim';
+        }
+
+      } else {
+        // ── 'swim' state: Autonomous hydrodynamic cruising ──
+        d.jumpTimer -= dt;
+        const swimSpeedMult = isSailing ? 5.6 : 3.4;
+        d.phase += dt * swimSpeedMult;
 
         if (isSailing) {
-          // Dynamic bow wave tracking with advance surge
-          const bowTarget = shipPosition.clone()
-            .addScaledVector(shipForward, d.offsetForward + jp * 2.2)
-            .addScaledVector(shipRight, d.offsetLateral);
+          // Dynamic bow wave surfing corridor (dynamic sweet spot, NOT a rigid coordinate!)
+          const fwdDist = 11.5 + Math.sin(time * 0.65 + d.id * 1.6) * 2.6;
+          const latDist = d.preferredSide + Math.sin(time * 0.42 + d.id * 2.1) * 1.6;
 
-          const waveSample = sampleOcean(bowTarget.x, bowTarget.z, time, 1.0);
-          const jumpHeight = Math.sin(jp * Math.PI) * 2.75;
-          d.pos.x = THREE.MathUtils.lerp(d.pos.x, bowTarget.x, 0.16);
-          d.pos.z = THREE.MathUtils.lerp(d.pos.z, bowTarget.z, 0.16);
-          d.pos.y = waveSample.height + jumpHeight - 0.72;
+          const sweetSpot = shipPosition.clone()
+            .addScaledVector(shipForward, fwdDist)
+            .addScaledVector(shipRight, latDist);
 
-          // Realistic dynamic jump arching: nose up on ascent, arched at crest, nose down on entry
-          const jumpPitch = (0.5 - jp) * 1.6;
-          const shipYaw = Math.atan2(shipForward.x, shipForward.z);
-          const bankRoll = (d.offsetLateral > 0 ? 0.24 : -0.24);
-          d.group.rotation.set(jumpPitch, shipYaw, bankRoll);
+          // Hydrodynamic attraction & velocity matching
+          const toSweetSpot = sweetSpot.clone().sub(d.pos);
+          toSweetSpot.y = 0;
+          const distToSpot = toSweetSpot.length();
+
+          const shipSpeedMps = shipSpeedKnots * 0.514;
+          const desiredSpeed = Math.max(shipSpeedMps * 1.06 + 1.2, 5.0);
+
+          // Blend forward direction with gentle attraction vector
+          const steerHeading = shipForward.clone().multiplyScalar(0.72)
+            .add(toSweetSpot.normalize().multiplyScalar(Math.min(distToSpot * 0.12, 0.48)))
+            .normalize();
+
+          const desiredVel = steerHeading.multiplyScalar(desiredSpeed);
+          const steerAccel = desiredVel.sub(d.vel).clampLength(0, 13.5 * dt);
+          d.vel.add(steerAccel);
+
         } else {
-          // Idle porpoise rolling jump alongside the boat
-          const orbitAngle = time * 0.42 + (d.id * Math.PI * 0.5);
-          const radius = 14.0 + (d.id % 2) * 4.0;
-          const targetX = shipPosition.x + Math.sin(orbitAngle) * radius;
-          const targetZ = shipPosition.z + Math.cos(orbitAngle) * radius;
-          const waveSample = sampleOcean(targetX, targetZ, time, 1.0);
+          // Idle swimming in wide, peaceful orbits around vessel
+          const orbitAngle = time * 0.24 + (d.id * Math.PI);
+          const orbitRadius = 18.0 + Math.sin(time * 0.16 + d.id) * 6.5;
+          const orbitTarget = shipPosition.clone().add(
+            new THREE.Vector3(Math.cos(orbitAngle) * orbitRadius, 0, Math.sin(orbitAngle) * orbitRadius)
+          );
 
-          const jumpHeight = Math.sin(jp * Math.PI) * 1.65;
-          d.pos.x = THREE.MathUtils.lerp(d.pos.x, targetX, 0.14);
-          d.pos.z = THREE.MathUtils.lerp(d.pos.z, targetZ, 0.14);
-          d.pos.y = waveSample.height + jumpHeight - 0.55;
-
-          const tangentYaw = orbitAngle + Math.PI / 2;
-          const jumpPitch = (0.5 - jp) * 1.25;
-          d.group.rotation.set(jumpPitch, tangentYaw, 0.22);
+          const toOrbit = orbitTarget.clone().sub(d.pos);
+          toOrbit.y = 0;
+          const desiredVel = toOrbit.normalize().multiplyScalar(4.2);
+          const steerAccel = desiredVel.sub(d.vel).clampLength(0, 6.5 * dt);
+          d.vel.add(steerAccel);
         }
 
-        if (d.jumpProgress >= 1.0) {
-          d.isJumping = false;
-          // Predictable rhythmic loop: resets timer to 8.8 seconds
-          // With 4 dolphins, jumps occur every 2.2 seconds!
-          d.jumpTimer = 8.8;
+        // Mutual pod separation steering: companion dolphins maintain natural breathing space
+        const otherDolphin = this.dolphins[1 - d.id];
+        if (otherDolphin) {
+          const sepVec = d.pos.clone().sub(otherDolphin.pos);
+          sepVec.y = 0;
+          const sepDist = sepVec.length();
+          if (sepDist < 3.4 && sepDist > 0.05) {
+            const sepForce = sepVec.normalize().multiplyScalar((3.4 - sepDist) * 3.8 * dt);
+            d.vel.add(sepForce);
+          }
         }
-      } else if (isSailing) {
-        // Submerged cruising riding the bow pressure wave (0.8m to 1.4m depth)
-        const bowTarget = shipPosition.clone()
-          .addScaledVector(shipForward, d.offsetForward)
-          .addScaledVector(shipRight, d.offsetLateral + Math.sin(time * 1.4 + d.id) * 0.85);
 
-        const waveSample = sampleOcean(bowTarget.x, bowTarget.z, time, 1.0);
-        const swimY = waveSample.height - 1.1 + Math.sin(d.phase) * 0.25;
+        // Subsurface cruising depth following wave profile smoothly (0.8m to 1.3m depth)
+        const targetSwimY = waveSample.height - 0.95 + Math.sin(d.phase) * 0.22;
+        d.vel.y += (targetSwimY - d.pos.y) * 4.2 * dt;
+        d.vel.y *= Math.pow(0.85, dt * 60);
 
-        d.pos.lerp(new THREE.Vector3(bowTarget.x, swimY, bowTarget.z), Math.min(1.0, 5.5 * dt));
+        // Initiate parabolic breach when jump timer expires
+        if (d.jumpTimer <= 0) {
+          d.state = 'jump';
+          d.hasSplashedUp = false;
+          d.hasSplashedDown = false;
+          const horizDir = new THREE.Vector3(d.vel.x, 0, d.vel.z).normalize();
+          d.vel.y = 7.2 + Math.random() * 2.2; // Upward impulse
+          d.vel.addScaledVector(horizDir, 3.6); // Forward surge through wave crest
+        }
 
-        const undulationPitch = Math.cos(d.phase) * 0.22;
-        const shipYaw = Math.atan2(shipForward.x, shipForward.z);
-        d.group.rotation.set(undulationPitch, shipYaw, Math.sin(d.phase * 0.5) * 0.1);
-      } else {
-        // Idle swimming around stationary / drifting vessel
-        const orbitAngle = time * 0.32 + (d.id * Math.PI * 0.5);
-        const radius = 15.0 + (d.id % 2) * 5.0;
-        const targetX = shipPosition.x + Math.sin(orbitAngle) * radius;
-        const targetZ = shipPosition.z + Math.cos(orbitAngle) * radius;
-        const waveSample = sampleOcean(targetX, targetZ, time, 1.0);
-        const swimY = waveSample.height - 1.05 + Math.sin(d.phase) * 0.3;
+        // Fluid swimming orientation
+        const targetYaw = Math.atan2(d.vel.x, d.vel.z);
+        const targetPitch = Math.cos(d.phase) * 0.22 + THREE.MathUtils.clamp(d.vel.y * 0.12, -0.28, 0.28);
+        const targetRoll = THREE.MathUtils.clamp(-d.vel.x * 0.04, -0.22, 0.22);
 
-        d.pos.lerp(new THREE.Vector3(targetX, swimY, targetZ), Math.min(1.0, 3.5 * dt));
-
-        const tangentYaw = orbitAngle + Math.PI / 2;
-        d.group.rotation.set(Math.cos(d.phase) * 0.18, tangentYaw, 0.12);
+        d.yaw = THREE.MathUtils.lerp(d.yaw, targetYaw, Math.min(1.0, 5.0 * dt));
+        d.pitch = THREE.MathUtils.lerp(d.pitch, targetPitch, Math.min(1.0, 6.0 * dt));
+        d.roll = THREE.MathUtils.lerp(d.roll, targetRoll, Math.min(1.0, 4.0 * dt));
+        d.group.rotation.set(d.pitch, d.yaw, d.roll);
       }
 
-      // Propulsive tail fluke strokes
-      d.tailStock.rotation.x = Math.sin(d.phase * 2.0) * 0.48;
+      // Propulsive fluke stroke
+      d.tailStock.rotation.x = Math.sin(d.phase * 2.0) * 0.52;
       d.group.position.copy(d.pos);
     }
 
@@ -669,8 +713,17 @@ export class MarineWildlife {
       w.pos.addScaledVector(wForward, 3.2 * dt);
 
       const distFromShip = w.pos.distanceTo(shipPosition);
-      if (distFromShip > 420) {
-        w.pos.copy(shipPosition).add(new THREE.Vector3((Math.random() - 0.5) * 260, -3.0, (Math.random() - 0.5) * 260));
+      if (distFromShip > 480) {
+        // Smooth oceanic re-centering far out of view (deep underwater)
+        const spawnAngle = Math.random() * Math.PI * 2;
+        w.pos.set(
+          shipPosition.x + Math.cos(spawnAngle) * 320,
+          -14.0,
+          shipPosition.z + Math.sin(spawnAngle) * 320
+        );
+        w.heading = spawnAngle + Math.PI + (Math.random() - 0.5) * 0.8;
+        w.state = 'deep';
+        w.timer = 8.0 + Math.random() * 6.0;
       }
 
       if (w.state === 'surface') {

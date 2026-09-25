@@ -6,8 +6,18 @@ export class WeatherManager {
   constructor(scene, renderer = null, initialPresetId = 'sunset') {
     this.scene = scene;
     this.renderer = renderer;
-    this.currentPreset = WEATHER_PRESETS[initialPresetId] || WEATHER_PRESETS.sunset;
+    this.currentPreset = { ...(WEATHER_PRESETS[initialPresetId] || WEATHER_PRESETS.sunset) };
     this.currentEnvMap = null;
+
+    // Autonomous diurnal day/night simulation & dynamic weather system
+    this.autoMode = true; // Enabled by default for living world simulation
+    this.simTime = 6.6; // 06:36 AM morning golden sunrise
+    this.simSpeed = 0.045; // ~0.045 hours/sec (full 24h cycle in ~8.8 minutes)
+    this.dynamicWeatherTimer = 160.0; // Dynamic passing squall timer (seconds)
+    this.stormFactor = 0.0;
+    this.stormState = 'clear'; // 'clear' | 'gathering' | 'active' | 'clearing'
+    this.stormDuration = 0;
+    this.lastEnvMapSimTime = -1;
 
     if (this.renderer) {
       this.pmremGenerator = new THREE.PMREMGenerator(this.renderer);
@@ -421,8 +431,274 @@ export class WeatherManager {
     this.scene.add(this.stars);
   }
 
+  lerpColor(hexA, hexB, t) {
+    const rA = (hexA >> 16) & 255, gA = (hexA >> 8) & 255, bA = hexA & 255;
+    const rB = (hexB >> 16) & 255, gB = (hexB >> 8) & 255, bB = hexB & 255;
+    const cl = Math.max(0, Math.min(1, t));
+    const r = Math.round(rA + (rB - rA) * cl);
+    const g = Math.round(gA + (gB - gA) * cl);
+    const b = Math.round(bA + (bB - bA) * cl);
+    return (r << 16) | (g << 8) | b;
+  }
+
+  lerpVec3(a, b, t) {
+    const cl = Math.max(0, Math.min(1, t));
+    return [
+      a[0] + (b[0] - a[0]) * cl,
+      a[1] + (b[1] - a[1]) * cl,
+      a[2] + (b[2] - a[2]) * cl
+    ];
+  }
+
+  setAutoMode(enabled) {
+    this.autoMode = !!enabled;
+    if (this.autoMode) {
+      this.applyAutoDiurnal(0);
+    }
+    return this.autoMode;
+  }
+
+  formatSimTime() {
+    const totalMins = Math.floor(this.simTime * 60);
+    const hours24 = Math.floor(totalMins / 60) % 24;
+    const mins = totalMins % 60;
+    const padMins = mins < 10 ? `0${mins}` : mins;
+    const isPM = hours24 >= 12;
+    const hours12 = hours24 % 12 === 0 ? 12 : hours24 % 12;
+    const padHours = hours12 < 10 ? `0${hours12}` : hours12;
+    const ampm = isPM ? 'PM' : 'AM';
+
+    let stage = 'Day';
+    if (this.stormFactor > 0.4) stage = 'Storm Squall';
+    else if (this.simTime >= 5.0 && this.simTime < 7.5) stage = 'Sunrise';
+    else if (this.simTime >= 7.5 && this.simTime < 16.0) stage = 'Tropical Noon';
+    else if (this.simTime >= 16.0 && this.simTime < 19.5) stage = 'Golden Sunset';
+    else if (this.simTime >= 19.5 && this.simTime < 21.5) stage = 'Twilight';
+    else stage = 'Moonlit Night';
+
+    return `${padHours}:${padMins} ${ampm} • ${stage}`;
+  }
+
+  applyAutoDiurnal(dt) {
+    // 1. Advance continuous 24-hour diurnal clock
+    this.simTime += this.simSpeed * dt;
+    if (this.simTime >= 24.0) this.simTime -= 24.0;
+    if (this.simTime < 0) this.simTime += 24.0;
+
+    // 2. Dynamic Weather Fronts ("somedays dynamic weathers" - passing squalls/tempests)
+    this.dynamicWeatherTimer -= dt;
+    if (this.stormState === 'clear' && this.dynamicWeatherTimer <= 0) {
+      this.stormState = 'gathering';
+      this.stormDuration = 22.0;
+    } else if (this.stormState === 'gathering') {
+      this.stormDuration -= dt;
+      this.stormFactor = 1.0 - (this.stormDuration / 22.0);
+      if (this.stormDuration <= 0) {
+        this.stormState = 'active';
+        this.stormDuration = 55.0; // 55s heavy tempest
+        this.stormFactor = 1.0;
+      }
+    } else if (this.stormState === 'active') {
+      this.stormDuration -= dt;
+      this.stormFactor = 1.0;
+      if (this.stormDuration <= 0) {
+        this.stormState = 'clearing';
+        this.stormDuration = 22.0;
+      }
+    } else if (this.stormState === 'clearing') {
+      this.stormDuration -= dt;
+      this.stormFactor = Math.max(0, this.stormDuration / 22.0);
+      if (this.stormDuration <= 0) {
+        this.stormState = 'clear';
+        this.stormFactor = 0.0;
+        this.dynamicWeatherTimer = 180.0 + Math.random() * 120.0; // Next squall in 3-5 minutes
+      }
+    }
+
+    // 3. Astronomical Solar & Lunar Coordinates
+    const rad = (this.simTime / 24.0) * Math.PI * 2;
+    const sunAlt = -Math.cos(rad); // -1 at midnight, 0 at dawn/dusk, +1 at noon
+    const sunAz = Math.sin(rad);  // -1 at dawn, +1 at dusk
+
+    const sunY = sunAlt * 420;
+    const sunX = Math.cos(sunAz * 1.1) * 280;
+    const sunZ = Math.sin(sunAz * 1.1) * 360 + 80;
+    const sunPos = [sunX, sunY, sunZ];
+
+    const moonPos = [-sunX * 0.9, -sunY * 0.85 + 60, -sunZ * 0.9];
+
+    // 4. Diurnal Color and Lighting Interpolation
+    let skyTopColor = 0x145da0;
+    let skyHorizonColor = 0x98d4f8;
+    let sunColor = 0xfffaed;
+    let sunIntensity = 2.2;
+    let moonIntensity = 0.0;
+    let ambientColor = 0x88b7d5;
+    let ambientIntensity = 0.85;
+    let fogColor = 0x8ec8f2;
+    let fogDensity = 0.0008;
+    let waterDeepColor = [0.008, 0.055, 0.14];
+    let waterShallowColor = [0.025, 0.32, 0.38];
+    let foamColor = [0.94, 0.98, 1.0];
+    let waveScale = 0.68;
+    let windSpeedKnots = 12;
+    let starsOpacity = 0.0;
+    let bioluminescence = false;
+
+    const goldSkyTop = 0x3d5a80;
+    const goldSkyHorizon = (sunAz < 0) ? 0xee7733 : 0xdd6633;
+    const goldSunColor = (sunAz < 0) ? 0xffaa55 : 0xff9944;
+    const goldAmbientColor = 0x6a4a3e;
+    const goldFogColor = 0x7a4835;
+    const goldWaterDeep = [0.01, 0.04, 0.10];
+    const goldWaterShallow = [0.05, 0.10, 0.12];
+    const goldFoam = [1.0, 0.92, 0.85];
+
+    if (sunAlt > 0.22) {
+      // Day (Tropical Sun)
+      sunIntensity = 1.8 + sunAlt * 0.5;
+      ambientIntensity = 0.75 + sunAlt * 0.15;
+      starsOpacity = 0.0;
+      bioluminescence = false;
+    } else if (sunAlt >= 0) {
+      // Transition between Golden Hour and Day
+      const f = sunAlt / 0.22;
+      skyTopColor = this.lerpColor(goldSkyTop, 0x145da0, f);
+      skyHorizonColor = this.lerpColor(goldSkyHorizon, 0x98d4f8, f);
+      sunColor = this.lerpColor(goldSunColor, 0xfffaed, f);
+      sunIntensity = 1.0 + f * 1.0;
+      ambientColor = this.lerpColor(goldAmbientColor, 0x88b7d5, f);
+      ambientIntensity = 0.58 + f * 0.27;
+      fogColor = this.lerpColor(goldFogColor, 0x8ec8f2, f);
+      fogDensity = 0.001 - f * 0.0002;
+      waterDeepColor = this.lerpVec3(goldWaterDeep, [0.008, 0.055, 0.14], f);
+      waterShallowColor = this.lerpVec3(goldWaterShallow, [0.025, 0.32, 0.38], f);
+      foamColor = this.lerpVec3(goldFoam, [0.94, 0.98, 1.0], f);
+      starsOpacity = (1.0 - f) * 0.25;
+      waveScale = 0.78 - f * 0.10;
+      windSpeedKnots = 15 - f * 3;
+    } else if (sunAlt >= -0.14) {
+      // Transition between Golden Hour and Moonlit Night
+      const f = (-sunAlt) / 0.14;
+      skyTopColor = this.lerpColor(goldSkyTop, 0x010811, f);
+      skyHorizonColor = this.lerpColor(goldSkyHorizon, 0x041924, f);
+      sunIntensity = Math.max(0.0, (1.0 - f) * 0.9);
+      sunColor = this.lerpColor(goldSunColor, 0x223344, f);
+      moonIntensity = f * 1.5;
+      ambientColor = this.lerpColor(goldAmbientColor, 0x0d2825, f);
+      ambientIntensity = 0.58 - f * 0.16;
+      fogColor = this.lerpColor(goldFogColor, 0x041620, f);
+      fogDensity = 0.001 + f * 0.0008;
+      waterDeepColor = this.lerpVec3(goldWaterDeep, [0.003, 0.015, 0.025], f);
+      waterShallowColor = this.lerpVec3(goldWaterShallow, [0.02, 0.16, 0.15], f);
+      foamColor = this.lerpVec3(goldFoam, [0.35, 1.0, 0.82], f);
+      starsOpacity = 0.25 + f * 0.75;
+      bioluminescence = f > 0.6;
+      waveScale = 0.78 - f * 0.18;
+      windSpeedKnots = 15 - f * 7;
+    } else {
+      // Night (Moonlit & Bioluminescent)
+      skyTopColor = 0x010811;
+      skyHorizonColor = 0x041924;
+      sunIntensity = 0.0;
+      sunColor = 0x112233;
+      moonIntensity = 1.7;
+      ambientColor = 0x0d2825;
+      ambientIntensity = 0.42;
+      fogColor = 0x041620;
+      fogDensity = 0.0018;
+      waterDeepColor = [0.003, 0.015, 0.025];
+      waterShallowColor = [0.02, 0.16, 0.15];
+      foamColor = [0.35, 1.0, 0.82];
+      starsOpacity = 1.0;
+      bioluminescence = true;
+      waveScale = 0.60;
+      windSpeedKnots = 8;
+    }
+
+    // 5. Blend Dynamic Passing Squalls / Storm Fronts ("somedays dynamic weathers")
+    let rain = false;
+    let lightning = false;
+    if (this.stormFactor > 0.01) {
+      const sf = this.stormFactor;
+      skyTopColor = this.lerpColor(skyTopColor, 0x05080c, sf * 0.95);
+      skyHorizonColor = this.lerpColor(skyHorizonColor, 0x141d28, sf * 0.9);
+      fogColor = this.lerpColor(fogColor, 0x0c141d, sf * 0.9);
+      fogDensity = THREE.MathUtils.lerp(fogDensity, 0.0022, sf);
+      sunIntensity *= (1.0 - sf * 0.85);
+      moonIntensity *= (1.0 - sf * 0.85);
+      ambientColor = this.lerpColor(ambientColor, 0x141f2b, sf * 0.8);
+      ambientIntensity = THREE.MathUtils.lerp(ambientIntensity, 0.35, sf);
+      waterDeepColor = this.lerpVec3(waterDeepColor, [0.008, 0.018, 0.035], sf * 0.9);
+      waterShallowColor = this.lerpVec3(waterShallowColor, [0.03, 0.06, 0.09], sf * 0.9);
+      foamColor = this.lerpVec3(foamColor, [0.75, 0.82, 0.90], sf);
+      waveScale = THREE.MathUtils.lerp(waveScale, 2.2, sf);
+      windSpeedKnots = THREE.MathUtils.lerp(windSpeedKnots, 48, sf);
+      starsOpacity *= (1.0 - sf);
+      rain = sf > 0.28;
+      lightning = sf > 0.52;
+      if (sf > 0.35) bioluminescence = false;
+    }
+
+    // 6. Apply live values to Three.js lighting & fog
+    this.ambientLight.color.setHex(ambientColor);
+    this.ambientLight.intensity = ambientIntensity;
+    this.hemiLight.color.setHex(skyTopColor);
+
+    this.sunLight.color.setHex(sunColor);
+    this.sunLight.intensity = Math.max(0.01, sunIntensity);
+    this.sunLight.position.set(...sunPos);
+
+    this.scene.fog.color.setHex(fogColor);
+    this.scene.fog.density = fogDensity;
+
+    // 7. Update Sky Dome Shader Uniforms
+    this.skyMat.uniforms.uBottomColor.value.setHex(skyHorizonColor);
+    this.skyMat.uniforms.uTopColor.value.setHex(skyTopColor);
+    this.skyMat.uniforms.uSunColor.value.setHex(sunColor);
+    this.skyMat.uniforms.uSunDir.value.set(...sunPos).normalize();
+    this.skyMat.uniforms.uMoonDir.value.set(...moonPos).normalize();
+    this.skyMat.uniforms.uMoonIntensity.value = moonIntensity;
+    this.skyMat.uniforms.uAurora.value = bioluminescence ? 1.0 : 0.0;
+
+    // 8. Celestial objects visibility
+    this.sunGroup.visible = (sunPos[1] > -35);
+    this.moonGroup.visible = (moonPos[1] > -25);
+    this.starMat.opacity = starsOpacity;
+
+    // 9. Update live currentPreset properties for main.js, ocean, particles, audio, and UI
+    this.currentPreset.id = (this.stormFactor > 0.4) ? 'storm' : (sunAlt > 0.22 ? 'sunny' : (sunAlt > -0.14 ? 'sunset' : 'aurora'));
+    this.currentPreset.skyTopColor = skyTopColor;
+    this.currentPreset.skyHorizonColor = skyHorizonColor;
+    this.currentPreset.sunColor = sunColor;
+    this.currentPreset.sunPosition = sunPos;
+    this.currentPreset.sunIntensity = sunIntensity;
+    this.currentPreset.moonPosition = moonPos;
+    this.currentPreset.moonIntensity = moonIntensity;
+    this.currentPreset.ambientColor = ambientColor;
+    this.currentPreset.ambientIntensity = ambientIntensity;
+    this.currentPreset.waterDeepColor = waterDeepColor;
+    this.currentPreset.waterShallowColor = waterShallowColor;
+    this.currentPreset.foamColor = foamColor;
+    this.currentPreset.waveScale = waveScale;
+    this.currentPreset.windSpeedKnots = windSpeedKnots;
+    this.currentPreset.fogColor = fogColor;
+    this.currentPreset.fogDensity = fogDensity;
+    this.currentPreset.starsOpacity = starsOpacity;
+    this.currentPreset.rain = rain;
+    this.currentPreset.lightning = lightning;
+    this.currentPreset.bioluminescence = bioluminescence;
+    this.currentPreset.name = this.formatSimTime();
+
+    // 10. Low-frequency IBL Environment Map update (throttled every 0.2 hours of sim time)
+    if (this.lastEnvMapSimTime < 0 || Math.abs(this.simTime - this.lastEnvMapSimTime) > 0.25) {
+      this.generateEnvironmentMap(this.currentPreset);
+      this.lastEnvMapSimTime = this.simTime;
+    }
+  }
+
   applyPreset(preset) {
-    this.currentPreset = preset;
+    this.currentPreset = { ...preset };
 
     // 1. Lighting
     this.ambientLight.color.setHex(preset.ambientColor);
@@ -450,13 +726,13 @@ export class WeatherManager {
     }
 
     // 4. Sun Object
-    const isSunVisible = preset.sunPosition && preset.sunPosition[1] > 0;
+    const isSunVisible = preset.sunPosition && preset.sunPosition[1] > -35;
     this.sunGroup.visible = isSunVisible;
 
     // 5. Moon Object
     const moonDir = new THREE.Vector3(...preset.moonPosition).normalize();
     this.moonGroup.position.copy(moonDir.clone().multiplyScalar(2300));
-    const isMoonVisible = preset.moonPosition[1] > 0;
+    const isMoonVisible = preset.moonPosition[1] > -25;
     this.moonGroup.visible = isMoonVisible;
 
     // 6. Stars
@@ -467,6 +743,11 @@ export class WeatherManager {
   }
 
   setPresetById(id) {
+    if (id === 'auto') {
+      this.setAutoMode(true);
+      return this.currentPreset;
+    }
+    this.setAutoMode(false);
     if (WEATHER_PRESETS[id]) {
       this.applyPreset(WEATHER_PRESETS[id]);
       return this.currentPreset;
@@ -474,7 +755,11 @@ export class WeatherManager {
     return null;
   }
 
-  update(time, shipPosition) {
+  update(time, shipPosition, dt = 0.016) {
+    if (this.autoMode) {
+      this.applyAutoDiurnal(dt);
+    }
+
     this.skyMat.uniforms.uTime.value = time;
 
     if (shipPosition) {

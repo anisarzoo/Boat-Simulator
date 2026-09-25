@@ -41,7 +41,8 @@ export class UIController {
       controlsBtn: document.getElementById('controlsBtn'),
       controlsModal: document.getElementById('controlsModal'),
       closeControlsBtn: document.getElementById('closeControlsBtn'),
-      gotItBtn: document.getElementById('gotItBtn')
+      gotItBtn: document.getElementById('gotItBtn'),
+      simClockVal: document.getElementById('simClockVal')
     };
 
     this.toastTimer = null;
@@ -306,7 +307,10 @@ export class UIController {
       this.dom.rudderIndicator.style.transform = `translateX(${(physics.rudder || 0) * 32}px)`;
     }
 
-    // Sea State
+    // Sea State & Weather
+    if (this.dom.simClockVal && weather && weather.name) {
+      this.dom.simClockVal.textContent = weather.name;
+    }
     if (this.dom.waveHeightVal) this.dom.waveHeightVal.textContent = `${((physics.currentWaveHeight || 0) * 1.8).toFixed(1)} m`;
     if (this.dom.windSpeedVal) this.dom.windSpeedVal.textContent = `${weather.windSpeedKnots || 0} kts`;
 

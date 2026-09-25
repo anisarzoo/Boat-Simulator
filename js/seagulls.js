@@ -5,7 +5,7 @@ export class SeagullFlock {
   constructor(scene) {
     this.scene = scene;
     this.birds = [];
-    this.count = 18;
+    this.count = 6;
 
     this.initSharedMaterials();
     this.initFlock();
@@ -249,17 +249,12 @@ export class SeagullFlock {
   }
 
   initFlock() {
-    // 4 Dynamic Behavioral Roles:
-    // 1. Wake Followers (6): Surf in the ship's stern draft and wake updrafts
-    // 2. Wave Skimmers (5): Fast dynamic soaring 1-3m above wave crests
-    // 3. Thermal Soarers (4): Wide high-altitude elliptical thermals (30-55m)
-    // 4. Swoop & Dive Foragers (3): Dive to sea surface for food, skim, then power-climb
-    const roles = [
-      'wake', 'wake', 'wake', 'wake', 'wake', 'wake',
-      'skimmer', 'skimmer', 'skimmer', 'skimmer', 'skimmer',
-      'thermal', 'thermal', 'thermal', 'thermal',
-      'diver', 'diver', 'diver'
-    ];
+    // 4 Distinct Natural Roles for 6 birds (Spacious, cinematic oceanic dispersal):
+    // 2 Wake Followers (soaring far behind stern in wake updrafts)
+    // 2 High Thermal Soarers (wide atmospheric spirals)
+    // 1 Wave Skimmer (roaming distant ocean swells)
+    // 1 Swoop & Dive Forager (distant surface foraging)
+    const roles = ['wake', 'thermal', 'skimmer', 'wake', 'thermal', 'diver'];
 
     for (let i = 0; i < this.count; i++) {
       const model = this.createSeagullModel();
@@ -273,7 +268,7 @@ export class SeagullFlock {
         id: i,
         ...model,
         role,
-        pos: new THREE.Vector3(0, 20, 0),
+        pos: new THREE.Vector3(0, 30, 0),
         vel: new THREE.Vector3(0, 0, 1),
         currentYaw: 0,
         currentPitch: 0,
@@ -285,29 +280,29 @@ export class SeagullFlock {
         isGliding: false,
         glideTimer: Math.random() * 4.0,
 
-        // Role-specific flight parameters
-        // Wake follower parameters
-        wakeDist: 18 + Math.random() * 32, // distance behind stern
-        wakeWidth: 8 + Math.random() * 20,
-        wakeHeight: 9.0 + Math.random() * 12.0, // Majestic high soaring altitude above mast
-        wakeCycleSpeed: 0.35 + Math.random() * 0.3,
-        wakePhaseOffset: (i * 1.25) + Math.random(),
+        // Role-specific flight parameters (Spacious non-clutter corridors)
+        // Wake follower parameters (well behind stern: 45m to 85m)
+        wakeDist: 48 + Math.random() * 36, // distance behind stern
+        wakeWidth: 16 + Math.random() * 22,
+        wakeHeight: 18.0 + Math.random() * 14.0, // High majestic altitude
+        wakeCycleSpeed: 0.28 + Math.random() * 0.22,
+        wakePhaseOffset: (i * 2.1) + Math.random(),
 
-        // Wave skimmer parameters
-        skimmerRadius: 28 + Math.random() * 38,
-        skimmerAltitude: 1.4 + Math.random() * 2.2,
-        skimmerSpeed: 0.65 + Math.random() * 0.35,
+        // Wave skimmer parameters (distant swell gliding: 55m to 100m)
+        skimmerRadius: 60 + Math.random() * 45,
+        skimmerAltitude: 2.2 + Math.random() * 2.5,
+        skimmerSpeed: 0.55 + Math.random() * 0.25,
         skimmerAngle: (i / this.count) * Math.PI * 2,
 
-        // Thermal soarer parameters
-        thermalRadius: 42 + Math.random() * 45,
-        thermalAltitude: 28 + Math.random() * 26,
-        thermalSpeed: 0.22 + Math.random() * 0.15,
+        // Thermal soarer parameters (high ocean thermals: 80m to 145m radius, 45m to 80m alt)
+        thermalRadius: 85 + Math.random() * 60,
+        thermalAltitude: 48 + Math.random() * 32,
+        thermalSpeed: 0.18 + Math.random() * 0.12,
         thermalAngle: (i / this.count) * Math.PI * 2,
 
-        // Swoop & Dive state machine
+        // Swoop & Dive state machine (distant forage patrol)
         diveState: 'cruise', // 'cruise' | 'dive' | 'skim' | 'climb'
-        diveTimer: 3 + Math.random() * 8,
+        diveTimer: 4 + Math.random() * 8,
         diveTarget: new THREE.Vector3()
       };
 
@@ -389,55 +384,57 @@ export class SeagullFlock {
         b.diveTimer -= dt;
 
         if (b.diveState === 'cruise') {
-          // Circle at medium altitude
-          const cruiseAngle = time * 0.4 + b.id * 2.0;
-          targetX = shipPosition.x + Math.sin(cruiseAngle) * 35;
-          targetZ = shipPosition.z + Math.cos(cruiseAngle) * 35;
-          targetY = 18 + Math.sin(time * 0.8) * 3.0;
+          // Circle at high altitude in wider patrol perimeter
+          const cruiseAngle = time * 0.32 + b.id * 2.0;
+          targetX = shipPosition.x + Math.sin(cruiseAngle) * 65;
+          targetZ = shipPosition.z + Math.cos(cruiseAngle) * 65;
+          targetY = 28 + Math.sin(time * 0.8) * 4.0;
           b.isGliding = true;
 
           if (b.diveTimer <= 0) {
-            // Spot target in water! Initiate dive
+            // Spot distant sea surface target! Initiate dive
             b.diveState = 'dive';
-            b.diveTimer = 2.2;
+            b.diveTimer = 2.6;
+            const diveAngle = Math.random() * Math.PI * 2;
+            const diveDist = 45 + Math.random() * 40;
             b.diveTarget.set(
-              shipPosition.x + (Math.random() - 0.5) * 40,
-              1.0,
-              shipPosition.z + (Math.random() - 0.5) * 40
+              shipPosition.x + Math.sin(diveAngle) * diveDist,
+              1.2,
+              shipPosition.z + Math.cos(diveAngle) * diveDist
             );
           }
         } else if (b.diveState === 'dive') {
           // Plunge towards water surface at high speed
           targetX = b.diveTarget.x;
           targetZ = b.diveTarget.z;
-          targetY = 1.0;
+          targetY = 1.2;
           b.isGliding = true; // Wings tucked into dive
 
-          if (b.pos.y <= 2.2 || b.diveTimer <= 0) {
+          if (b.pos.y <= 2.8 || b.diveTimer <= 0) {
             b.diveState = 'skim';
-            b.diveTimer = 1.4;
+            b.diveTimer = 1.8;
           }
         } else if (b.diveState === 'skim') {
-          // Skim right above sea spray
-          targetX = b.diveTarget.x + shipForward.x * 12;
-          targetZ = b.diveTarget.z + shipForward.z * 12;
-          targetY = 1.2;
+          // Skim right above distant sea spray
+          targetX = b.diveTarget.x + shipForward.x * 20;
+          targetZ = b.diveTarget.z + shipForward.z * 20;
+          targetY = 1.6;
           b.isGliding = false;
 
           if (b.diveTimer <= 0) {
             b.diveState = 'climb';
-            b.diveTimer = 3.0;
+            b.diveTimer = 3.5;
           }
         } else if (b.diveState === 'climb') {
           // Steep power-climb back to cruising altitude
-          targetX = shipPosition.x + (Math.random() - 0.5) * 30;
-          targetZ = shipPosition.z + (Math.random() - 0.5) * 30;
-          targetY = 20;
+          targetX = shipPosition.x + (Math.random() - 0.5) * 60;
+          targetZ = shipPosition.z + (Math.random() - 0.5) * 60;
+          targetY = 30;
           b.isGliding = false; // Energetic power flaps!
 
           if (b.diveTimer <= 0) {
             b.diveState = 'cruise';
-            b.diveTimer = 6 + Math.random() * 12;
+            b.diveTimer = 8 + Math.random() * 14;
           }
         }
       }

@@ -402,11 +402,15 @@ class App {
     // 4. Update Ocean displacement and follow ship
     this.ocean.update(this.time, this.ship.group.position);
 
-    // 5. Update Sky, Sunlight and Fog
-    this.weather.update(this.time, this.ship.group.position);
+    // 5. Update Sky, Sunlight, Fog, and Diurnal Cycle
+    this.weather.update(this.time, this.ship.group.position, dt);
+    if (this.weather.autoMode) {
+      this.ocean.setWeather(this.weather.currentPreset);
+      this.particles.setWeather(this.weather.currentPreset);
+    }
 
     // 6. Update Wake, Bow Spray, Rain, Lightning
-    const isStorm = this.weather.currentPreset.id === 'storm';
+    const isStorm = this.weather.currentPreset.id === 'storm' || (this.weather.stormFactor && this.weather.stormFactor > 0.4);
     this.particles.update(dt, this.ship.group, this.physics, isStorm, this.camera);
 
     // 7. Update Wildlife, AI Traffic, Islands, Buoys, Seagulls, and Clouds
