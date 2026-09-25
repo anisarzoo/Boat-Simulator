@@ -42,19 +42,21 @@ class App {
     this.camera = new THREE.PerspectiveCamera(
       55,
       window.innerWidth / window.innerHeight,
-      0.5,
-      3000
+      0.3,
+      4000
     );
 
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
-      powerPreference: 'high-performance'
+      powerPreference: 'high-performance',
+      logarithmicDepthBuffer: true
     });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setClearColor(0x1a2634, 1.0);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.15;
+    this.renderer.toneMappingExposure = 1.25;
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 

@@ -77,7 +77,7 @@ export function getGerstnerGLSL() {
       float q;
     };
 
-    uniform Wave uWaves[4];
+    uniform Wave uWaves[8];
     uniform float uTime;
     uniform float uWaveScale;
 
@@ -87,7 +87,7 @@ export function getGerstnerGLSL() {
       vec3 n = vec3(0.0, 1.0, 0.0);
       float totalCrest = 0.0;
 
-      for (int i = 0; i < 4; i++) {
+      for (int i = 0; i < 8; i++) {
         Wave w = uWaves[i];
         float dotVal = dot(w.dir, worldPos.xz) * w.k;
         float phase = dotVal + w.wFreq * time;

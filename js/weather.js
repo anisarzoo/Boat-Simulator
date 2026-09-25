@@ -132,9 +132,9 @@ export class WeatherManager {
     return new THREE.CanvasTexture(canvas);
   }
 
-  // 1. SKY DOME
+  // 1. SKY DOME — Photorealistic with volumetric cloud layers
   initSkyDome() {
-    const skyGeo = new THREE.SphereGeometry(1200, 48, 32);
+    const skyGeo = new THREE.SphereGeometry(1200, 64, 48);
 
     this.skyMat = new THREE.ShaderMaterial({
       uniforms: {
@@ -147,9 +147,11 @@ export class WeatherManager {
       },
       vertexShader: `
         varying vec3 vWorldPos;
+        varying vec3 vDir;
         void main() {
           vec4 worldPos = modelMatrix * vec4(position, 1.0);
           vWorldPos = worldPos.xyz;
+          vDir = normalize(position);
           gl_Position = projectionMatrix * viewMatrix * worldPos;
         }
       `,
@@ -161,31 +163,155 @@ export class WeatherManager {
         uniform float uAurora;
         uniform float uTime;
         varying vec3 vWorldPos;
+        varying vec3 vDir;
+
+        // ── Gradient Noise (non-tiling) ──
+        vec2 hash2(vec2 p) {
+          p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
+          return -1.0 + 2.0 * fract(sin(p) * 43758.5453123);
+        }
+
+        float gnoise(vec2 p) {
+          vec2 i = floor(p);
+          vec2 f = fract(p);
+          vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+          float a = dot(hash2(i + vec2(0.0,0.0)), f - vec2(0.0,0.0));
+          float b = dot(hash2(i + vec2(1.0,0.0)), f - vec2(1.0,0.0));
+          float c = dot(hash2(i + vec2(0.0,1.0)), f - vec2(0.0,1.0));
+          float d = dot(hash2(i + vec2(1.0,1.0)), f - vec2(1.0,1.0));
+          return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+        }
+
+        // ── Multi-octave fBm with domain warping for realistic cloud shapes ──
+        float fbm(vec2 p) {
+          float v = 0.0;
+          float a = 0.5;
+          mat2 rot = mat2(0.8, 0.6, -0.6, 0.8);
+          for (int i = 0; i < 6; i++) {
+            v += a * gnoise(p);
+            p = rot * p * 2.02 + vec2(1.7, 0.9);
+            a *= 0.48;
+          }
+          return v;
+        }
+
+        // ── Domain-warped fBm for naturalistic cloud formations ──
+        float cloudDensity(vec2 uv, float time) {
+          // First domain warp pass
+          vec2 q = vec2(
+            fbm(uv + vec2(0.0, 0.0) + time * 0.015),
+            fbm(uv + vec2(5.2, 1.3) - time * 0.012)
+          );
+
+          // Second domain warp pass (gives complex, organic shapes)
+          vec2 r = vec2(
+            fbm(uv + 4.0 * q + vec2(1.7, 9.2) + time * 0.008),
+            fbm(uv + 4.0 * q + vec2(8.3, 2.8) - time * 0.010)
+          );
+
+          return fbm(uv + 3.5 * r);
+        }
 
         void main() {
-          vec3 dir = normalize(vWorldPos);
+          vec3 dir = normalize(vDir);
 
           // Optical height gradient from horizon (y=0) to zenith (y=1)
           float h = clamp(dir.y * 1.35, 0.0, 1.0);
-          vec3 sky = mix(uBottomColor, uTopColor, pow(h, 0.58));
 
-          // Physically-based Mie forward atmospheric scattering halo around the sun
-          float sunDot = max(dot(dir, normalize(uSunDir)), 0.0);
-          float sunGlow = pow(sunDot, 12.0) * 0.6 + pow(sunDot, 64.0) * 1.4;
-          sky += uSunColor * sunGlow;
+          // Non-linear sky gradient: Rayleigh-like scattering simulation
+          vec3 sky = mix(uBottomColor, uTopColor, pow(h, 0.52));
 
-          // Horizon haze blending band
-          float horizonHaze = exp(-max(dir.y, 0.0) * 8.0);
-          sky = mix(sky, uBottomColor, horizonHaze * 0.35);
+          // Zenith-to-horizon tint shift (blue to warmer as y→0)
+          vec3 midTint = mix(uBottomColor, uTopColor, 0.35) * 1.08;
+          float midBand = exp(-pow((h - 0.25) * 3.5, 2.0));
+          sky = mix(sky, midTint, midBand * 0.25);
 
-          // Aurora Borealis curtains in upper atmosphere (Night preset)
+          // ── Mie Scattering: Sun glow + atmospheric disc ──
+          vec3 sunDir = normalize(uSunDir);
+          float sunDot = max(dot(dir, sunDir), 0.0);
+
+          // Large soft atmospheric glow (Mie forward scatter)
+          float mieGlow = pow(sunDot, 6.0) * 0.4;
+          // Tight corona
+          float corona = pow(sunDot, 32.0) * 0.8;
+          // Sun disc core
+          float disc = pow(sunDot, 200.0) * 2.5;
+          sky += uSunColor * (mieGlow + corona + disc);
+
+          // Horizon atmospheric extinction band
+          float horizonHaze = exp(-max(dir.y, 0.0) * 6.5);
+          vec3 hazeColor = mix(uBottomColor, uSunColor, pow(sunDot, 3.0) * 0.3);
+          sky = mix(sky, hazeColor, horizonHaze * 0.4);
+
+          // ── Volumetric Cloud Layer ──
+          if (dir.y > 0.02) {
+            // Project onto a virtual cloud plane at altitude
+            // Use non-linear projection to prevent stretching at low angles
+            float cloudAlt = max(dir.y, 0.08);
+            vec2 cloudUV = (dir.xz / cloudAlt) * 0.28;
+
+            // Domain-warped cloud density — creates organic, non-repeating formations
+            float density = cloudDensity(cloudUV, uTime);
+
+            // Coverage threshold — controls cloud amount
+            float coverage = 0.42;
+            float cloudMask = smoothstep(coverage - 0.05, coverage + 0.32, density);
+
+            // Fade clouds near horizon to prevent hard cutoff
+            cloudMask *= smoothstep(0.02, 0.22, dir.y);
+
+            // Height-based fade (thin out at zenith, thicker at mid-sky)
+            cloudMask *= 1.0 - smoothstep(0.7, 1.0, dir.y) * 0.5;
+
+            if (cloudMask > 0.005) {
+              // ── Cloud Lighting Model ──
+              // Simplified volumetric: sample density offset toward sun to simulate self-shadowing
+              vec2 sunOffset = sunDir.xz * 0.12;
+              float shadowDensity = cloudDensity(cloudUV + sunOffset, uTime);
+              float shadowFactor = smoothstep(coverage, coverage + 0.35, shadowDensity);
+
+              // Sun-lit bright tops
+              vec3 cloudBright = mix(vec3(1.0, 0.98, 0.95), uSunColor, 0.35);
+              // Shadow dark bottoms (ambient sky color)
+              vec3 cloudDark = mix(uTopColor * 0.55, uBottomColor * 0.45, 0.4);
+
+              // Sun angle influence on cloud lighting
+              float sunInfluence = pow(max(dot(dir, sunDir), 0.0), 2.5) * 0.55 + 0.45;
+
+              vec3 cloudColor = mix(cloudBright, cloudDark, shadowFactor * 0.7);
+              cloudColor *= sunInfluence;
+
+              // Silver lining / rim light on cloud edges
+              float rim = smoothstep(coverage + 0.05, coverage + 0.15, density);
+              float rimLight = (1.0 - rim) * pow(sunDot, 4.0) * 0.6;
+              cloudColor += uSunColor * rimLight;
+
+              // Atmospheric depth tinting near horizon
+              float horizDepth = 1.0 - smoothstep(0.05, 0.4, dir.y);
+              cloudColor = mix(cloudColor, hazeColor, horizDepth * 0.45);
+
+              sky = mix(sky, cloudColor, cloudMask * 0.82);
+            }
+          }
+
+          // ── Aurora Borealis curtains (Night preset) ──
           if (uAurora > 0.5 && dir.y > 0.15) {
             float wave1 = sin(dir.x * 6.0 + uTime * 0.8) * 0.5 + 0.5;
             float wave2 = cos(dir.z * 5.0 - uTime * 0.5) * 0.5 + 0.5;
+            float wave3 = sin(dir.x * 3.2 - uTime * 0.3 + dir.z * 2.1) * 0.5 + 0.5;
             float curtain = pow(wave1 * wave2, 2.5) * smoothstep(0.15, 0.7, dir.y);
-            vec3 auroraColor = mix(vec3(0.05, 0.95, 0.55), vec3(0.1, 0.5, 0.95), wave2);
-            sky += auroraColor * curtain * 0.85;
+            float shimmer = pow(wave3, 3.0) * smoothstep(0.2, 0.5, dir.y) * 0.4;
+            vec3 auroraGreen = vec3(0.05, 0.95, 0.55);
+            vec3 auroraBlue = vec3(0.1, 0.5, 0.95);
+            vec3 auroraPurple = vec3(0.6, 0.15, 0.85);
+            vec3 auroraColor = mix(auroraGreen, auroraBlue, wave2);
+            auroraColor = mix(auroraColor, auroraPurple, shimmer);
+            sky += auroraColor * (curtain + shimmer) * 0.85;
           }
+
+          // Tone-mapping clamp to prevent bloom overflow
+          sky = sky / (sky + vec3(1.0)); // simple Reinhard
+          sky = pow(sky, vec3(1.0 / 2.2)) * 1.15; // gamma + slight exposure boost
 
           gl_FragColor = vec4(sky, 1.0);
         }
@@ -272,9 +398,10 @@ export class WeatherManager {
 
   // 4. TWINKLING CELESTIAL STARFIELD
   initStarfield() {
-    const starCount = 1800;
+    const starCount = 2400;
     const starGeo = new THREE.BufferGeometry();
     const starPositions = new Float32Array(starCount * 3);
+    const starSizes = new Float32Array(starCount);
 
     for (let i = 0; i < starCount; i++) {
       // Upper hemisphere distribution
@@ -287,9 +414,13 @@ export class WeatherManager {
       starPositions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
       starPositions[i * 3 + 1] = radius * Math.cos(phi) + 20; // above horizon
       starPositions[i * 3 + 2] = radius * Math.sin(phi) * Math.sin(theta);
+
+      // Random star magnitudes
+      starSizes[i] = 1.0 + Math.random() * 2.5;
     }
 
     starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+    starGeo.setAttribute('aSize', new THREE.BufferAttribute(starSizes, 1));
 
     this.starMat = new THREE.PointsMaterial({
       color: 0xffffff,

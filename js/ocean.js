@@ -1,4 +1,4 @@
-// Ocean mesh and custom Gerstner wave shader material
+// Ocean mesh and custom Gerstner wave shader material — Ultra-Realistic PBR Water
 import * as THREE from 'three';
 import { BASE_WAVES } from './constants.js';
 import { computeWaveSpecs, getGerstnerGLSL } from './gerstner.js';
@@ -7,8 +7,8 @@ export class Ocean {
   constructor(scene, initialWeather) {
     this.scene = scene;
     this.weather = initialWeather;
-    this.gridSize = 650;
-    this.segments = 220; // 220x220 = ~48k vertices for crisp wave crests
+    this.gridSize = 2500;
+    this.segments = 256;
 
     this.initMesh();
   }
@@ -50,10 +50,9 @@ export class Ocean {
         varying vec3 vWorldPos;
         varying vec3 vNormal;
         varying float vCrest;
-        varying vec2 vUv;
+        varying float vDist;
 
         void main() {
-          vUv = uv * 32.0;
           vec3 worldPos = (modelMatrix * vec4(position, 1.0)).xyz;
           vec3 displacedPos;
           vec3 displacedNormal;
@@ -61,9 +60,16 @@ export class Ocean {
 
           evaluateGerstner(worldPos, uTime, displacedPos, displacedNormal, crest);
 
+          // Smoothly fade waves to flat plane near the distant boundary
+          float r = length(worldPos.xz);
+          float edgeFade = 1.0 - smoothstep(750.0, 1180.0, r);
+          displacedPos.y *= edgeFade;
+          displacedPos.xz = mix(worldPos.xz, displacedPos.xz, edgeFade);
+
           vWorldPos = displacedPos;
-          vNormal = displacedNormal;
-          vCrest = crest;
+          vNormal = mix(vec3(0.0, 1.0, 0.0), displacedNormal, edgeFade);
+          vCrest = crest * edgeFade;
+          vDist = length(cameraPosition - displacedPos);
 
           gl_Position = projectionMatrix * viewMatrix * vec4(displacedPos, 1.0);
         }
@@ -83,119 +89,207 @@ export class Ocean {
         varying vec3 vWorldPos;
         varying vec3 vNormal;
         varying float vCrest;
-        varying vec2 vUv;
+        varying float vDist;
 
-        // Analytical hash & smooth value noise
-        float hash(vec2 p) {
-          return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+        // ── Non-repeating Value Noise (Quintic Hermite) ──
+        // Uses large prime-based hashing to prevent visible tiling
+        vec2 hash2(vec2 p) {
+          p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
+          return -1.0 + 2.0 * fract(sin(p) * 43758.5453123);
         }
 
-        float noise(vec2 p) {
+        float gradientNoise(vec2 p) {
           vec2 i = floor(p);
           vec2 f = fract(p);
-          vec2 u = f * f * (3.0 - 2.0 * f);
-          return mix(mix(hash(i + vec2(0.0,0.0)), hash(i + vec2(1.0,0.0)), u.x),
-                     mix(hash(i + vec2(0.0,1.0)), hash(i + vec2(1.0,1.0)), u.x), u.y);
+          vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0); // quintic
+
+          float a = dot(hash2(i + vec2(0.0, 0.0)), f - vec2(0.0, 0.0));
+          float b = dot(hash2(i + vec2(1.0, 0.0)), f - vec2(1.0, 0.0));
+          float c = dot(hash2(i + vec2(0.0, 1.0)), f - vec2(0.0, 1.0));
+          float d = dot(hash2(i + vec2(1.0, 1.0)), f - vec2(1.0, 1.0));
+
+          return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
         }
 
-        // Multi-octave capillary wind ripple perturbation
-        vec3 getCapillaryNormal(vec2 pos, float time) {
+        // ── Multi-scale Detail Normal from analytical noise derivatives ──
+        // Each octave uses a different rotation matrix to break axis alignment
+        vec3 getDetailNormal(vec2 pos, float time, float lod) {
           vec2 dN = vec2(0.0);
-          vec2 d1 = vec2(0.8, 0.6);
-          vec2 d2 = vec2(-0.7, 0.7);
-          vec2 d3 = vec2(0.9, -0.4);
-          vec2 d4 = vec2(-0.5, -0.85);
+          float eps = 0.08;
 
-          float p1 = dot(pos, d1) * 0.95 + time * 2.2;
-          float p2 = dot(pos, d2) * 1.65 - time * 2.8;
-          float p3 = dot(pos, d3) * 3.10 + time * 4.1;
-          float p4 = dot(pos, d4) * 5.40 - time * 5.8;
+          // 6 directional wave trains at different scales and speeds
+          // Using irrational multipliers to prevent alignment
+          vec2 dirs[6];
+          dirs[0] = vec2(0.809, 0.588);
+          dirs[1] = vec2(-0.656, 0.755);
+          dirs[2] = vec2(0.951, -0.309);
+          dirs[3] = vec2(-0.454, -0.891);
+          dirs[4] = vec2(0.276, 0.961);
+          dirs[5] = vec2(-0.978, 0.208);
 
-          dN += d1 * cos(p1) * 0.08;
-          dN += d2 * cos(p2) * 0.055;
-          dN += d3 * cos(p3) * 0.032;
-          dN += d4 * cos(p4) * 0.018;
+          float scales[6];
+          scales[0] = 0.72;
+          scales[1] = 1.37;
+          scales[2] = 2.63;
+          scales[3] = 4.87;
+          scales[4] = 8.21;
+          scales[5] = 14.6;
+
+          float speeds[6];
+          speeds[0] = 1.8;
+          speeds[1] = -2.3;
+          speeds[2] = 3.1;
+          speeds[3] = -4.5;
+          speeds[4] = 5.7;
+          speeds[5] = -7.2;
+
+          float amps[6];
+          amps[0] = 0.085;
+          amps[1] = 0.062;
+          amps[2] = 0.040;
+          amps[3] = 0.024;
+          amps[4] = 0.014;
+          amps[5] = 0.007;
+
+          // LOD: skip high-frequency octaves at distance
+          int maxOctaves = int(mix(6.0, 2.0, clamp(lod, 0.0, 1.0)));
+
+          for (int i = 0; i < 6; i++) {
+            if (i >= maxOctaves) break;
+            float phase = dot(pos, dirs[i]) * scales[i] + time * speeds[i];
+            dN += dirs[i] * cos(phase) * amps[i];
+          }
 
           return normalize(vec3(-dN.x, 1.0, -dN.y));
         }
 
+        // ── Worley (cellular) noise for organic foam patterns ──
+        float worley(vec2 p) {
+          vec2 n = floor(p);
+          vec2 f = fract(p);
+          float minDist = 1.0;
+          for (int j = -1; j <= 1; j++) {
+            for (int i = -1; i <= 1; i++) {
+              vec2 g = vec2(float(i), float(j));
+              vec2 o = fract(sin(vec2(dot(n + g, vec2(127.1, 311.7)), dot(n + g, vec2(269.5, 183.3)))) * 43758.5453);
+              vec2 r = g + o - f;
+              float d = dot(r, r);
+              minDist = min(minDist, d);
+            }
+          }
+          return sqrt(minDist);
+        }
+
+        // ── Multi-octave fBm with domain rotation to break tiling ──
+        float fbm(vec2 p) {
+          float v = 0.0;
+          float a = 0.5;
+          mat2 rot = mat2(0.8, 0.6, -0.6, 0.8); // 36.87° rotation
+          for (int i = 0; i < 5; i++) {
+            v += a * gradientNoise(p);
+            p = rot * p * 2.03 + vec2(1.7, 0.9);
+            a *= 0.49;
+          }
+          return v;
+        }
+
         void main() {
-          // Combine macroscopic wave normal with high-frequency capillary ripples
+          // LOD factor for detail culling at distance
+          float lodFactor = clamp((vDist - 30.0) / 350.0, 0.0, 1.0);
+
+          // Combine macroscopic wave normal with multi-scale detail ripples
           vec3 baseNormal = normalize(vNormal);
-          vec3 capNorm = getCapillaryNormal(vWorldPos.xz * 0.35, uTime);
-          vec3 normal = normalize(baseNormal + vec3(capNorm.x, 0.0, capNorm.z) * 0.42);
+          vec3 detailN = getDetailNormal(vWorldPos.xz, uTime, lodFactor);
+          float detailStrength = mix(0.45, 0.08, lodFactor);
+          vec3 normal = normalize(baseNormal + vec3(detailN.x, 0.0, detailN.z) * detailStrength);
 
           vec3 viewDir = normalize(cameraPosition - vWorldPos);
           vec3 lightDir = normalize(uSunPosition - vWorldPos);
           vec3 R = reflect(-viewDir, normal);
 
-          // Physically accurate Fresnel reflection (F0 = 0.02 for water IOR 1.333)
+          // Physically accurate Schlick Fresnel (F0 = 0.02 for water IOR 1.333)
           float NdotV = clamp(dot(normal, viewDir), 0.001, 1.0);
           float fresnel = 0.02 + 0.98 * pow(1.0 - NdotV, 5.0);
 
-          // Analytical atmospheric sky dome reflection along R
+          // Sky dome reflection with non-linear height falloff
           float skyH = clamp(R.y, 0.0, 1.0);
-          vec3 skyReflect = mix(uHorizonColor, uTopSkyColor, pow(skyH, 0.48));
+          vec3 skyReflect = mix(uHorizonColor, uTopSkyColor, pow(skyH, 0.42));
 
-          // Sun flare & corona along reflected eye vector
+          // Sun specular reflection on water surface
           float sunReflectDot = max(dot(R, lightDir), 0.0);
-          skyReflect += uSunColor * (pow(sunReflectDot, 32.0) * 0.6 + pow(sunReflectDot, 128.0) * 1.2) * (uSunIntensity * 0.45);
+          skyReflect += uSunColor * (pow(sunReflectDot, 48.0) * 0.5 + pow(sunReflectDot, 256.0) * 1.8) * (uSunIntensity * 0.4);
 
-          // Trough self-reflection for downward rays
+          // Trough darkening for downward reflected rays
           if (R.y < 0.0) {
-            vec3 troughColor = uDeepColor * 0.7;
-            skyReflect = mix(skyReflect, troughColor, clamp(-R.y * 3.0, 0.0, 0.9));
+            vec3 troughColor = uDeepColor * 0.6;
+            skyReflect = mix(skyReflect, troughColor, clamp(-R.y * 3.5, 0.0, 0.92));
           }
 
-          // Physically-based GGX Microfacet Specular Highlight (The Sun Glitter Path)
+          // ── GGX Microfacet Specular (sun glitter path) ──
           vec3 H = normalize(lightDir + viewDir);
           float NdotH = max(dot(normal, H), 0.0);
           float NdotL = max(dot(normal, lightDir), 0.0);
-          float roughness = 0.095;
+          float roughness = 0.08;
           float alpha = roughness * roughness;
-          float denom = NdotH * NdotH * (alpha * alpha - 1.0) + 1.0;
-          float D = (alpha * alpha) / (3.14159265 * denom * denom);
+          float alpha2 = alpha * alpha;
+          float denom = NdotH * NdotH * (alpha2 - 1.0) + 1.0;
+          float D = alpha2 / (3.14159265 * denom * denom);
 
           float k = (roughness + 1.0) * (roughness + 1.0) / 8.0;
           float G = (NdotL / (NdotL * (1.0 - k) + k)) * (NdotV / (NdotV * (1.0 - k) + k));
-          vec3 specular = uSunColor * ((D * G * fresnel) / max(4.0 * NdotV * NdotL, 0.001)) * (uSunIntensity * 0.45);
+          vec3 specular = uSunColor * ((D * G * fresnel) / max(4.0 * NdotV * NdotL, 0.001)) * (uSunIntensity * 0.4);
 
-          // Subsurface scattering on wave crests (light shining through thin water tops)
-          float forwardScatter = pow(clamp(dot(viewDir, -lightDir), 0.0, 1.0), 3.2);
-          float crestThick = clamp(vCrest * 1.8 + (vWorldPos.y + 1.5) * 0.35, 0.0, 2.5);
-          vec3 sssColor = mix(uShallowColor, vec3(0.05, 0.68, 0.58), 0.6) * forwardScatter * crestThick * 2.2;
+          // ── Subsurface Scattering (light through thin wave crests) ──
+          float forwardScatter = pow(clamp(dot(viewDir, -lightDir), 0.0, 1.0), 4.0);
+          float crestThick = clamp(vCrest * 2.0 + (vWorldPos.y + 1.5) * 0.3, 0.0, 2.0);
+          vec3 sssColor = mix(uShallowColor, uSunColor, 0.7) * forwardScatter * crestThick * 1.2;
 
-          // Water body gradient from deep oceanic trough to crest
+          // ── Depth-dependent water body color ──
+          // Uses world-space noise to break visual monotony across the ocean
           float heightFactor = clamp((vWorldPos.y + 2.8) / 5.6, 0.0, 1.0);
-          vec3 waterBody = mix(uDeepColor, uShallowColor, heightFactor);
+          // Add large-scale color variation using slow-moving noise
+          float colorVar = fbm(vWorldPos.xz * 0.0018 + vec2(uTime * 0.003)) * 0.15;
+          vec3 waterBody = mix(uDeepColor * (1.0 - colorVar), uShallowColor * (1.0 + colorVar * 0.5), heightFactor);
 
           // Composite water surface
           vec3 finalColor = mix(waterBody, skyReflect, fresnel) + sssColor + specular;
 
-          // Multi-layer cellular wave foam on steep crests
-          float n1 = noise(vWorldPos.xz * 1.6 + vec2(uTime * 0.22));
-          float n2 = noise(vWorldPos.xz * 4.8 - vec2(uTime * 0.38));
-          float cells = pow(abs(sin(vWorldPos.x * 2.2 + n1 * 2.5) * cos(vWorldPos.z * 2.2 + n2 * 2.5)), 0.65);
-          float combinedFoam = n1 * 0.45 + cells * 0.55;
-          if (vCrest > 0.46) {
-            float foamMask = smoothstep(0.46, 0.85, vCrest) * combinedFoam;
-            finalColor = mix(finalColor, uFoamColor, foamMask * 0.95);
+          // ── Organic Foam using Worley noise cells ──
+          if (vCrest > 0.35) {
+            // Multi-scale cellular foam pattern
+            float w1 = worley(vWorldPos.xz * 0.8 + vec2(uTime * 0.15, -uTime * 0.08));
+            float w2 = worley(vWorldPos.xz * 2.4 - vec2(uTime * 0.22, uTime * 0.12));
+            float w3 = worley(vWorldPos.xz * 6.0 + vec2(-uTime * 0.3, uTime * 0.18));
+
+            // Organic foam cells: thin veins between Voronoi regions
+            float foamCells = (1.0 - smoothstep(0.0, 0.25, w1)) * 0.5
+                            + (1.0 - smoothstep(0.0, 0.15, w2)) * 0.3
+                            + (1.0 - smoothstep(0.0, 0.10, w3)) * 0.2;
+
+            // Large-scale noise modulation to prevent uniform foam coverage
+            float foamMod = fbm(vWorldPos.xz * 0.06 + vec2(uTime * 0.02));
+            foamCells *= smoothstep(0.3, 0.6, foamMod);
+
+            float foamMask = smoothstep(0.35, 0.80, vCrest) * foamCells;
+            // Foam is slightly bluish-white, not pure white
+            vec3 foam = uFoamColor * (0.85 + foamMask * 0.15);
+            finalColor = mix(finalColor, foam, clamp(foamMask * 0.9, 0.0, 1.0));
           }
 
-          // Bioluminescent plankton glow (night/aurora)
+          // ── Bioluminescent plankton glow (night/aurora) ──
           if (uBioluminescence > 0.5) {
             float bioPulse = sin(uTime * 2.5 + vWorldPos.x * 0.18 + vWorldPos.z * 0.18) * 0.5 + 0.5;
-            vec3 bioColor = vec3(0.06, 0.98, 0.72) * (vCrest * 0.95 * bioPulse);
+            float bioSwirl = gradientNoise(vWorldPos.xz * 0.05 + uTime * 0.4) * 0.5 + 0.5;
+            vec3 bioColor = vec3(0.06, 0.98, 0.72) * (vCrest * 0.8 * bioPulse * bioSwirl);
             finalColor += bioColor;
           }
 
-          // Atmospheric horizon distance fog blending
-          float dist = length(cameraPosition - vWorldPos);
-          float fogFactor = 1.0 - exp(-dist * 0.0014);
-          vec3 horizonColor = mix(uHorizonColor, uSunColor, 0.2);
-          finalColor = mix(finalColor, horizonColor, clamp(fogFactor * 0.92, 0.0, 0.98));
+          // ── Atmospheric horizon blending ──
+          float fogFactor = clamp((vDist - 180.0) / 1100.0, 0.0, 1.0);
+          fogFactor = fogFactor * fogFactor; // quadratic curve
+          finalColor = mix(finalColor, uHorizonColor, fogFactor);
 
-          gl_FragColor = vec4(finalColor, 0.98);
+          gl_FragColor = vec4(finalColor, 0.97);
         }
       `,
       transparent: true,

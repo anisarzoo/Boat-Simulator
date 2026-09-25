@@ -2,35 +2,47 @@
 
 export const GRAVITY = 9.81;
 
-// Gerstner Wave definitions (Direction, Steepness, Wavelength, Speed)
+// Realistic multi-octave ocean swell & wind-sea spectrum (JONSWAP / Phillips inspired)
 export const BASE_WAVES = [
-  { dir: [1.0, 0.25], steepness: 0.22, wavelength: 48.0, speed: 1.15 },
-  { dir: [0.75, 0.7],  steepness: 0.18, wavelength: 26.0, speed: 1.35 },
-  { dir: [-0.4, 0.9],  steepness: 0.12, wavelength: 14.0, speed: 1.55 },
-  { dir: [0.2, -0.95], steepness: 0.08, wavelength: 8.0,  speed: 1.85 }
+  // Primary oceanic swell (long, smooth rolling swells)
+  { dir: [0.85, 0.52],  steepness: 0.13, wavelength: 72.0, speed: 1.0 },
+  // Secondary cross-swell (counter-angle creates natural interference pockets)
+  { dir: [0.45, -0.89], steepness: 0.11, wavelength: 46.0, speed: 1.18 },
+  // Intermediate wind sea (angled with prevailing wind)
+  { dir: [0.92, 0.38],  steepness: 0.11, wavelength: 30.0, speed: 1.35 },
+  // Cross-chop sea
+  { dir: [-0.62, 0.78], steepness: 0.09, wavelength: 20.0, speed: 1.55 },
+  // Short wind chop
+  { dir: [0.78, -0.62], steepness: 0.08, wavelength: 13.0, speed: 1.8 },
+  // High-frequency crest chop
+  { dir: [0.35, 0.94],  steepness: 0.06, wavelength: 8.5,  speed: 2.1 },
+  // Diagonal micro-swell
+  { dir: [-0.82, -0.57], steepness: 0.05, wavelength: 5.2, speed: 2.5 },
+  // Surface capillary agitation
+  { dir: [0.98, -0.18], steepness: 0.04, wavelength: 3.2,  speed: 3.0 }
 ];
 
 export const WEATHER_PRESETS = {
   sunny: {
     id: 'sunny',
     name: 'Tropical Noon',
-    skyTopColor: 0x1e6bb8,
-    skyHorizonColor: 0x8ec8f2,
+    skyTopColor: 0x145da0,
+    skyHorizonColor: 0x98d4f8,
     sunColor: 0xfffaed,
     sunGlowColor: 0xffe899,
     sunIntensity: 2.2,
     sunPosition: [160, 320, 280],
-    moonPosition: [-280, -200, -300], // below horizon
+    moonPosition: [-280, -200, -300],
     moonIntensity: 0.0,
     ambientColor: 0x88b7d5,
     ambientIntensity: 0.85,
-    waterDeepColor: [0.015, 0.09, 0.18],
-    waterShallowColor: [0.03, 0.42, 0.45],
-    foamColor: [0.92, 0.98, 1.0],
-    waveScale: 0.75,
+    waterDeepColor: [0.008, 0.055, 0.14],
+    waterShallowColor: [0.025, 0.32, 0.38],
+    foamColor: [0.94, 0.98, 1.0],
+    waveScale: 0.65,
     windSpeedKnots: 12,
-    fogColor: 0x7eb9de,
-    fogDensity: 0.0012,
+    fogColor: 0x8ec8f2,
+    fogDensity: 0.0008,
     starsOpacity: 0.0,
     rain: false,
     lightning: false,
@@ -39,23 +51,23 @@ export const WEATHER_PRESETS = {
   sunset: {
     id: 'sunset',
     name: 'Golden Hour',
-    skyTopColor: 0x1d1536,     // Twilight deep purple
-    skyHorizonColor: 0xff6622, // Glowing crimson amber
-    sunColor: 0xff8833,        // Rich golden orange
+    skyTopColor: 0x1a1230,     // Twilight deep indigo purple
+    skyHorizonColor: 0xff5511, // Glowing warm sunset horizon
+    sunColor: 0xff8833,        // Radiant golden orange
     sunGlowColor: 0xff4411,
     sunIntensity: 2.6,
-    sunPosition: [110, 85, 480], // Directly over the bow in the player's view!
+    sunPosition: [110, 85, 480],
     moonPosition: [-240, 160, -380],
     moonIntensity: 0.25,
-    ambientColor: 0xa84a38,
-    ambientIntensity: 0.7,
-    waterDeepColor: [0.04, 0.06, 0.14],
-    waterShallowColor: [0.22, 0.18, 0.25],
-    foamColor: [1.0, 0.85, 0.70],
-    waveScale: 1.05,
-    windSpeedKnots: 18,
-    fogColor: 0xd95b3b,
-    fogDensity: 0.0016,
+    ambientColor: 0x7a3a2e,
+    ambientIntensity: 0.65,
+    waterDeepColor: [0.015, 0.035, 0.07], // Authentic deep twilight ocean
+    waterShallowColor: [0.10, 0.06, 0.05], // Warm ambient surface
+    foamColor: [1.0, 0.92, 0.85],
+    waveScale: 0.82,
+    windSpeedKnots: 16,
+    fogColor: 0xd95026,
+    fogDensity: 0.0009,
     starsOpacity: 0.2,
     rain: false,
     lightning: false,
