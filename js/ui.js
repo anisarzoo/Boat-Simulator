@@ -21,6 +21,7 @@ export class UIController {
       toast: document.getElementById('toast'),
       muteBtn: document.getElementById('muteBtn'),
       hornBtn: document.getElementById('hornBtn'),
+      fsBtn: document.getElementById('fsBtn'),
       weatherButtons: document.querySelectorAll('.weather-btn'),
       cameraButtons: document.querySelectorAll('.cam-btn'),
       touchControls: document.getElementById('touchControls')
@@ -63,6 +64,17 @@ export class UIController {
         if (this.callbacks.onHorn) {
           this.callbacks.onHorn();
           this.showToast('📯 Fog Horn Sounded');
+        }
+      });
+    }
+
+    // Fullscreen button
+    if (this.dom.fsBtn) {
+      this.dom.fsBtn.addEventListener('click', () => {
+        if (!document.fullscreenElement) {
+          document.documentElement.requestFullscreen().catch(() => {});
+        } else {
+          document.exitFullscreen().catch(() => {});
         }
       });
     }

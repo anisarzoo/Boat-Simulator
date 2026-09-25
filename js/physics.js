@@ -95,8 +95,12 @@ export class ShipPhysics {
     const forwardSpeed = this.linearVelocity.dot(forward);
     this.speedKnots = forwardSpeed * 1.94384; // m/s to knots
 
-    const rudderTorqueMagnitude = -this.rudder * SHIP_CONFIG.maxRudderAngle * forwardSpeed * 4200.0;
+    const rudderTorqueMagnitude = -this.rudder * SHIP_CONFIG.maxRudderAngle * forwardSpeed * 4500.0;
     totalTorque.y += rudderTorqueMagnitude;
+
+    // Centrifugal rolling moment (ship heels outward during turns)
+    const heelTorque = this.rudder * forwardSpeed * 5200.0;
+    totalTorque.z += heelTorque;
 
     // 4. Hydrodynamic Resistance (Linear & Angular Drag)
     // Lateral drag (ships resist sideways sliding heavily)

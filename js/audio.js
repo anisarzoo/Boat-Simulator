@@ -159,6 +159,37 @@ export class OceanAudio {
     hornGain.connect(this.masterGain);
   }
 
+  // Hydrodynamic wave crash / hull impact sound
+  playWaveImpact(intensity = 1.0) {
+    if (!this.started || this.isMuted) return;
+
+    const t = this.ctx.currentTime;
+    const impactGain = this.ctx.createGain();
+    const vol = Math.min(0.35 * intensity, 0.45);
+    impactGain.gain.setValueAtTime(vol, t);
+    impactGain.gain.exponentialRampToValueAtTime(0.001, t + 0.9);
+
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(220, t);
+    filter.frequency.exponentialRampToValueAtTime(60, t + 0.9);
+
+    const bufferSize = Math.floor(this.ctx.sampleRate * 0.9);
+    const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+    const output = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      output[i] = (Math.random() * 2 - 1) * Math.exp(-i / (this.ctx.sampleRate * 0.25));
+    }
+
+    const src = this.ctx.createBufferSource();
+    src.buffer = noiseBuffer;
+
+    src.connect(filter);
+    filter.connect(impactGain);
+    impactGain.connect(this.masterGain);
+    src.start(t);
+  }
+
   toggleMute() {
     if (!this.started) {
       this.init();

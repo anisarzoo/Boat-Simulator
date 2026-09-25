@@ -62,6 +62,11 @@
         <button id="muteBtn" class="quick-btn" title="Toggle Procedural Audio [M]">
           🔊 Audio On
         </button>
+
+        <!-- Fullscreen Toggle -->
+        <button id="fsBtn" class="quick-btn" title="Toggle Fullscreen [F]">
+          ⛶ Fullscreen
+        </button>
       </div>
     </header>
 
@@ -69,6 +74,22 @@
     <footer class="bottom-bar">
       <!-- Instrument Cluster -->
       <div class="telemetry-cluster interactive">
+        <!-- Marine Radar Display -->
+        <div class="glass-card radar-card">
+          <div class="radar-scope">
+            <div class="radar-ring r1"></div>
+            <div class="radar-ring r2"></div>
+            <div class="radar-crosshair-h"></div>
+            <div class="radar-crosshair-v"></div>
+            <div id="radarSweep" class="radar-sweep"></div>
+            <div class="radar-ship-blip">▲</div>
+          </div>
+          <div class="radar-meta">
+            <span class="radar-title">MARINE RADAR</span>
+            <span class="radar-status">3NM · SCANNING</span>
+          </div>
+        </div>
+
         <!-- Speedometer -->
         <div class="glass-card gauge-card">
           <div class="gauge-header">

@@ -1,4 +1,4 @@
-// High-detail procedural 3D Exploration Vessel / Cruiser model
+// High-detail procedural 3D Exploration Mega-Yacht model
 import * as THREE from 'three';
 
 export class Ship {
@@ -10,273 +10,313 @@ export class Ship {
     // Interactive animated parts
     this.propellers = [];
     this.rudders = [];
-    this.radarAntenna = null;
+    this.radarAntennas = [];
     this.flag = null;
+    this.interiorLights = [];
 
     this.buildShip();
     this.scene.add(this.group);
   }
 
   buildShip() {
-    // Materials
+    // 1. Premium Materials
     const matHullDark = new THREE.MeshStandardMaterial({
-      color: 0x111c26, // Deep nautical navy
-      roughness: 0.35,
-      metalness: 0.25
+      color: 0x0c1520, // Midnight blue / anthracite marine hull
+      roughness: 0.22,
+      metalness: 0.35
     });
 
     const matHullWhite = new THREE.MeshStandardMaterial({
-      color: 0xf5f8fa, // Crisp marine white
-      roughness: 0.25,
-      metalness: 0.15
+      color: 0xf4f7fa, // Lustrous off-white gelcoat
+      roughness: 0.18,
+      metalness: 0.2
     });
 
     const matStripe = new THREE.MeshStandardMaterial({
-      color: 0xd93829, // Nautical red boot-topping stripe
-      roughness: 0.4
+      color: 0xcc291f, // Classic yacht red boot-topping stripe
+      roughness: 0.3
     });
 
     const matDeckTeak = new THREE.MeshStandardMaterial({
-      color: 0x9e7247, // Teak deck planking
-      roughness: 0.65,
+      color: 0xa2784b, // Warm golden teak wood planking
+      roughness: 0.72,
       metalness: 0.05
     });
 
     const matGlass = new THREE.MeshStandardMaterial({
-      color: 0x0f2333,
-      roughness: 0.1,
-      metalness: 0.9,
+      color: 0x071524,
+      roughness: 0.05,
+      metalness: 0.95,
       transparent: true,
-      opacity: 0.82
+      opacity: 0.85
     });
 
-    const matMetal = new THREE.MeshStandardMaterial({
-      color: 0xcccccc,
-      metalness: 0.85,
-      roughness: 0.2
+    const matChrome = new THREE.MeshStandardMaterial({
+      color: 0xe8eef5,
+      metalness: 0.95,
+      roughness: 0.12
     });
 
     const matBrass = new THREE.MeshStandardMaterial({
       color: 0xd4af37,
-      metalness: 0.9,
-      roughness: 0.3
+      metalness: 0.92,
+      roughness: 0.25
     });
 
-    // 1. LOWER HULL (hydrodynamic boat shape)
+    const matConsoleGlow = new THREE.MeshBasicMaterial({
+      color: 0x00f0ff
+    });
+
     const hullGroup = new THREE.Group();
-    
-    // Main lower hull (tapered wedge)
-    const hullGeo = new THREE.CylinderGeometry(2.4, 1.3, 17.5, 12, 1);
-    hullGeo.rotateZ(Math.PI / 2);
-    hullGeo.scale(1.0, 0.48, 1.0);
-    const lowerHull = new THREE.Mesh(hullGeo, matHullDark);
-    lowerHull.position.set(0, -0.4, 0);
-    lowerHull.castShadow = true;
-    lowerHull.receiveShadow = true;
-    hullGroup.add(lowerHull);
 
-    // Sharp Bow entry wedge
-    const bowConeGeo = new THREE.ConeGeometry(2.2, 5.0, 8);
-    bowConeGeo.rotateX(-Math.PI / 2);
-    bowConeGeo.scale(1.0, 0.48, 1.0);
-    const bowCone = new THREE.Mesh(bowConeGeo, matHullDark);
-    bowCone.position.set(0, -0.4, 9.5);
-    bowCone.castShadow = true;
-    hullGroup.add(bowCone);
+    // 2. MODERN HYDRODYNAMIC HULL
+    // Lower hull keel section
+    const keelGeo = new THREE.BoxGeometry(3.6, 0.9, 16.5);
+    const keel = new THREE.Mesh(keelGeo, matHullDark);
+    keel.position.set(0, -0.65, -0.4);
+    keel.castShadow = true;
+    keel.receiveShadow = true;
+    hullGroup.add(keel);
 
-    // Red Waterline stripe
-    const stripeGeo = new THREE.BoxGeometry(4.7, 0.22, 18.2);
-    const waterlineStripe = new THREE.Mesh(stripeGeo, matStripe);
-    waterlineStripe.position.set(0, -0.05, 0);
-    hullGroup.add(waterlineStripe);
+    // Knife Bow entry
+    const bowEntryGeo = new THREE.ConeGeometry(2.0, 5.8, 8);
+    bowEntryGeo.rotateX(-Math.PI / 2);
+    bowEntryGeo.scale(1.0, 0.45, 1.0);
+    const bowEntry = new THREE.Mesh(bowEntryGeo, matHullDark);
+    bowEntry.position.set(0, -0.65, 8.8);
+    bowEntry.castShadow = true;
+    hullGroup.add(bowEntry);
 
-    // Upper sheer strake / white topsides
-    const upperHullGeo = new THREE.BoxGeometry(4.8, 1.2, 17.8);
+    // Red Waterline accent band
+    const waterlineGeo = new THREE.BoxGeometry(4.75, 0.18, 17.6);
+    const waterline = new THREE.Mesh(waterlineGeo, matStripe);
+    waterline.position.set(0, -0.15, -0.2);
+    hullGroup.add(waterline);
+
+    // Main Upper Hull / Flared Topsides
+    const upperHullGeo = new THREE.BoxGeometry(4.85, 1.25, 17.5);
     const upperHull = new THREE.Mesh(upperHullGeo, matHullWhite);
-    upperHull.position.set(0, 0.65, 0);
+    upperHull.position.set(0, 0.55, -0.2);
     upperHull.castShadow = true;
     hullGroup.add(upperHull);
 
-    // Tapered bow bulwark
-    const bowUpperGeo = new THREE.ConeGeometry(2.35, 4.8, 8);
-    bowUpperGeo.rotateX(-Math.PI / 2);
-    bowUpperGeo.scale(1.0, 0.5, 1.0);
-    const bowUpper = new THREE.Mesh(bowUpperGeo, matHullWhite);
-    bowUpper.position.set(0, 0.65, 9.3);
-    bowUpper.castShadow = true;
-    hullGroup.add(bowUpper);
+    // Flared bow overhang
+    const bowFlaredGeo = new THREE.ConeGeometry(2.45, 5.2, 8);
+    bowFlaredGeo.rotateX(-Math.PI / 2);
+    bowFlaredGeo.scale(1.0, 0.55, 1.0);
+    const bowFlared = new THREE.Mesh(bowFlaredGeo, matHullWhite);
+    bowFlared.position.set(0, 0.65, 9.2);
+    bowFlared.castShadow = true;
+    hullGroup.add(bowFlared);
 
-    // 2. MAIN DECK (Teak Wood)
-    const deckGeo = new THREE.BoxGeometry(4.6, 0.12, 17.2);
-    const deck = new THREE.Mesh(deckGeo, matDeckTeak);
-    deck.position.set(0, 1.25, 0);
-    deck.receiveShadow = true;
-    hullGroup.add(deck);
+    // Transom & Aft Swim Platform
+    const swimPlatformGeo = new THREE.BoxGeometry(4.4, 0.22, 1.8);
+    const swimPlatform = new THREE.Mesh(swimPlatformGeo, matDeckTeak);
+    swimPlatform.position.set(0, 0.05, -9.4);
+    hullGroup.add(swimPlatform);
 
-    // Bow teak triangle
-    const bowDeckGeo = new THREE.ConeGeometry(2.25, 4.5, 8);
-    bowDeckGeo.rotateX(-Math.PI / 2);
-    bowDeckGeo.scale(1.0, 0.05, 1.0);
-    const bowDeck = new THREE.Mesh(bowDeckGeo, matDeckTeak);
-    bowDeck.position.set(0, 1.25, 9.1);
-    hullGroup.add(bowDeck);
+    // 3. TEAK DECK & BULWARKS
+    const mainDeckGeo = new THREE.BoxGeometry(4.65, 0.12, 17.0);
+    const mainDeck = new THREE.Mesh(mainDeckGeo, matDeckTeak);
+    mainDeck.position.set(0, 1.2, -0.2);
+    mainDeck.receiveShadow = true;
+    hullGroup.add(mainDeck);
 
-    // 3. CABIN SUPERSTRUCTURE (Tier 1 - Saloon & Galley)
-    const cabinTier1Geo = new THREE.BoxGeometry(3.6, 1.5, 9.8);
-    const cabinTier1 = new THREE.Mesh(cabinTier1Geo, matHullWhite);
-    cabinTier1.position.set(0, 2.05, -0.8);
-    cabinTier1.castShadow = true;
-    hullGroup.add(cabinTier1);
+    // Bow teak foredeck
+    const foredeckGeo = new THREE.ConeGeometry(2.35, 4.8, 8);
+    foredeckGeo.rotateX(-Math.PI / 2);
+    foredeckGeo.scale(1.0, 0.06, 1.0);
+    const foredeck = new THREE.Mesh(foredeckGeo, matDeckTeak);
+    foredeck.position.set(0, 1.2, 9.0);
+    hullGroup.add(foredeck);
 
-    // Tier 1 Panoramic Windows (Black tinted glass)
-    const winTier1Geo = new THREE.BoxGeometry(3.68, 0.65, 8.2);
-    const winTier1 = new THREE.Mesh(winTier1Geo, matGlass);
-    winTier1.position.set(0, 2.15, -0.8);
-    hullGroup.add(winTier1);
+    // 4. SUPERSTRUCTURE (Tier 1 Saloon)
+    const saloonGeo = new THREE.BoxGeometry(3.7, 1.6, 9.6);
+    const saloon = new THREE.Mesh(saloonGeo, matHullWhite);
+    saloon.position.set(0, 2.05, -1.2);
+    saloon.castShadow = true;
+    hullGroup.add(saloon);
 
-    // 4. WHEELHOUSE / BRIDGE (Tier 2)
-    const bridgeGeo = new THREE.BoxGeometry(3.1, 1.3, 4.8);
+    // Saloon dark panoramic flush glazing
+    const saloonGlassGeo = new THREE.BoxGeometry(3.78, 0.8, 8.4);
+    const saloonGlass = new THREE.Mesh(saloonGlassGeo, matGlass);
+    saloonGlass.position.set(0, 2.15, -1.2);
+    hullGroup.add(saloonGlass);
+
+    // 5. WHEELHOUSE / FLYBRIDGE (Tier 2)
+    const bridgeGeo = new THREE.BoxGeometry(3.2, 1.35, 4.6);
     const bridge = new THREE.Mesh(bridgeGeo, matHullWhite);
-    bridge.position.set(0, 3.45, 0.6);
+    bridge.position.set(0, 3.45, 0.5);
     bridge.castShadow = true;
     hullGroup.add(bridge);
 
-    // Forward Raked Wheelhouse Windshield
-    const windshieldGeo = new THREE.BoxGeometry(3.18, 0.72, 3.6);
-    const windshield = new THREE.Mesh(windshieldGeo, matGlass);
-    windshield.position.set(0, 3.55, 0.7);
-    hullGroup.add(windshield);
+    // Forward Raked Bridge Windshield (Aero angle)
+    const bridgeGlassGeo = new THREE.BoxGeometry(3.28, 0.75, 3.6);
+    const bridgeGlass = new THREE.Mesh(bridgeGlassGeo, matGlass);
+    bridgeGlass.position.set(0, 3.55, 0.6);
+    hullGroup.add(bridgeGlass);
 
-    // 5. RADAR ARCH & COMMS MAST
-    const archGeo = new THREE.BoxGeometry(2.6, 1.1, 0.45);
-    const radarArch = new THREE.Mesh(archGeo, matHullWhite);
-    radarArch.position.set(0, 4.65, -0.9);
+    // Glowing interior navigation screens inside the bridge
+    const mfdConsole = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.22, 0.1), matConsoleGlow);
+    mfdConsole.position.set(0, 3.4, 1.8);
+    hullGroup.add(mfdConsole);
+
+    // 6. RADAR ARCH & COMMS TOWER
+    const radarArchGeo = new THREE.BoxGeometry(2.7, 1.2, 0.55);
+    const radarArch = new THREE.Mesh(radarArchGeo, matHullWhite);
+    radarArch.position.set(0, 4.65, -1.1);
     radarArch.castShadow = true;
     hullGroup.add(radarArch);
 
-    // Rotating Radar Scanner
-    const radarBarGeo = new THREE.BoxGeometry(1.6, 0.16, 0.22);
-    this.radarAntenna = new THREE.Mesh(radarBarGeo, matMetal);
-    this.radarAntenna.position.set(0, 5.35, -0.9);
-    hullGroup.add(this.radarAntenna);
+    // Main rotating radar scanner bar
+    const radarBar = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.18, 0.25), matChrome);
+    radarBar.position.set(0, 5.4, -1.1);
+    hullGroup.add(radarBar);
+    this.radarAntennas.push(radarBar);
 
-    // Satellite Comms Domes (Radomes)
-    const domeGeo = new THREE.SphereGeometry(0.38, 12, 12);
-    for (const sx of [-0.9, 0.9]) {
-      const dome = new THREE.Mesh(domeGeo, matHullWhite);
-      dome.position.set(sx, 5.15, -0.9);
-      hullGroup.add(dome);
+    // Satellite communications domes (Dual KVH domes)
+    const satDomeGeo = new THREE.SphereGeometry(0.42, 16, 16);
+    for (const sx of [-0.95, 0.95]) {
+      const satDome = new THREE.Mesh(satDomeGeo, matHullWhite);
+      satDome.position.set(sx, 5.2, -1.1);
+      hullGroup.add(satDome);
     }
 
-    // Main Masthead
-    const mastGeo = new THREE.CylinderGeometry(0.06, 0.1, 2.4, 8);
-    const mast = new THREE.Mesh(mastGeo, matMetal);
-    mast.position.set(0, 5.3, 0.2);
+    // Communication mast & aerials
+    const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.12, 2.8, 8), matChrome);
+    mast.position.set(0, 5.5, 0.2);
     hullGroup.add(mast);
 
-    // Navigation Lights (Port = Red, Starboard = Green, Masthead = White)
-    const redLightMat = new THREE.MeshStandardMaterial({ color: 0xff1100, emissive: 0xff0000, emissiveIntensity: 2.5 });
-    const greenLightMat = new THREE.MeshStandardMaterial({ color: 0x00ff44, emissive: 0x00ff22, emissiveIntensity: 2.5 });
-    const whiteLightMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 2.0 });
+    // Dual Searchlights on brow
+    for (const sx of [-0.65, 0.65]) {
+      const searchLight = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.28, 12), matChrome);
+      searchLight.rotation.x = Math.PI / 2;
+      searchLight.position.set(sx, 4.25, 2.7);
+      hullGroup.add(searchLight);
+    }
 
-    const portLight = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.15, 0.15), redLightMat);
-    portLight.position.set(-1.62, 3.8, 0.5);
-    hullGroup.add(portLight);
+    // 7. NAVIGATION LIGHTS
+    const navRed = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.18, 0.18),
+      new THREE.MeshStandardMaterial({ color: 0xff0000, emissive: 0xff0000, emissiveIntensity: 3.0 }));
+    navRed.position.set(-1.68, 3.8, 0.5);
+    hullGroup.add(navRed);
 
-    const stbdLight = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.15, 0.15), greenLightMat);
-    stbdLight.position.set(1.62, 3.8, 0.5);
-    hullGroup.add(stbdLight);
+    const navGreen = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.18, 0.18),
+      new THREE.MeshStandardMaterial({ color: 0x00ff44, emissive: 0x00ff22, emissiveIntensity: 3.0 }));
+    navGreen.position.set(1.68, 3.8, 0.5);
+    hullGroup.add(navGreen);
 
-    const mastLight = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 8), whiteLightMat);
-    mastLight.position.set(0, 6.45, 0.2);
-    hullGroup.add(mastLight);
+    const navWhite = new THREE.Mesh(new THREE.SphereGeometry(0.14, 8, 8),
+      new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 2.8 }));
+    navWhite.position.set(0, 6.8, 0.2);
+    hullGroup.add(navWhite);
 
-    // 6. TWIN PROPELLERS & DUAL RUDDERS
-    for (const sx of [-1.1, 1.1]) {
-      // Propeller shaft
-      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 1.8), matBrass);
-      shaft.rotation.x = Math.PI / 2.2;
-      shaft.position.set(sx, -0.85, -7.2);
+    // Warm deck courtesy lighting dots
+    const courtesyMat = new THREE.MeshBasicMaterial({ color: 0xffb86c });
+    for (let z = -6.0; z <= 6.0; z += 3.0) {
+      for (const sx of [-2.25, 2.25]) {
+        const lightDot = new THREE.Mesh(new THREE.SphereGeometry(0.06, 6, 6), courtesyMat);
+        lightDot.position.set(sx, 1.32, z);
+        hullGroup.add(lightDot);
+      }
+    }
+
+    // 8. DECK RAILS & HARDWARE
+    // Stainless steel stanchions around the foredeck
+    const railMat = matChrome;
+    for (let z = 2.0; z <= 8.5; z += 1.8) {
+      for (const sx of [-2.28, 2.28]) {
+        const taper = 1.0 - Math.max(0, (z - 5.0) / 4.0) * 0.45;
+        const stanchion = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.85), railMat);
+        stanchion.position.set(sx * taper, 1.62, z);
+        hullGroup.add(stanchion);
+      }
+    }
+
+    // Anchor & Windlass on foredeck
+    const windlass = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.35, 0.32, 12), matChrome);
+    windlass.position.set(0, 1.4, 7.8);
+    hullGroup.add(windlass);
+
+    const anchor = new THREE.Mesh(new THREE.TorusGeometry(0.35, 0.08, 8, 12), matHullDark);
+    anchor.rotation.y = Math.PI / 2;
+    anchor.position.set(-2.45, 0.85, 8.4);
+    hullGroup.add(anchor);
+
+    // 9. PROPULSION & TWIN HIGH-SPEED PROPELLERS
+    for (const sx of [-1.15, 1.15]) {
+      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 2.2), matBrass);
+      shaft.rotation.x = Math.PI / 2.25;
+      shaft.position.set(sx, -1.0, -7.5);
       hullGroup.add(shaft);
 
-      // 4-blade propeller
       const propGroup = new THREE.Group();
-      propGroup.position.set(sx, -1.05, -8.1);
-      const hub = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.4, 8), matBrass);
+      propGroup.position.set(sx, -1.2, -8.6);
+      const hub = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.45, 8), matBrass);
       hub.rotation.x = -Math.PI / 2;
       propGroup.add(hub);
 
       for (let b = 0; b < 4; b++) {
-        const blade = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.6, 0.04), matBrass);
+        const blade = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.65, 0.04), matBrass);
         blade.rotation.z = (b * Math.PI) / 2;
-        blade.rotation.y = 0.35;
-        blade.position.y = 0.25 * Math.sin((b * Math.PI) / 2);
-        blade.position.x = 0.25 * Math.cos((b * Math.PI) / 2);
+        blade.rotation.y = 0.38;
+        blade.position.y = 0.28 * Math.sin((b * Math.PI) / 2);
+        blade.position.x = 0.28 * Math.cos((b * Math.PI) / 2);
         propGroup.add(blade);
       }
       hullGroup.add(propGroup);
       this.propellers.push(propGroup);
 
-      // Rudder
+      // Hydraulic Rudders
       const rudderGroup = new THREE.Group();
-      rudderGroup.position.set(sx, -0.95, -8.6);
-      const rudderBlade = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.9, 0.7), matMetal);
-      rudderBlade.position.set(0, -0.4, -0.2);
+      rudderGroup.position.set(sx, -1.1, -9.1);
+      const rudderBlade = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.05, 0.75), matChrome);
+      rudderBlade.position.set(0, -0.45, -0.22);
       rudderGroup.add(rudderBlade);
       hullGroup.add(rudderGroup);
       this.rudders.push(rudderGroup);
     }
 
-    // 7. ENSIGN / FLAG ON AFT STAFF
-    const staff = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 2.0), matMetal);
+    // 10. ENSIGN / YACHT FLAG
+    const staff = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 2.2), matChrome);
     staff.rotation.x = -0.25;
-    staff.position.set(0, 1.9, -8.4);
+    staff.position.set(0, 1.85, -8.8);
     hullGroup.add(staff);
 
-    const flagGeo = new THREE.PlaneGeometry(1.1, 0.68, 6, 3);
+    const flagGeo = new THREE.PlaneGeometry(1.2, 0.75, 8, 4);
     const flagMat = new THREE.MeshStandardMaterial({
       color: 0x1f4e79,
-      roughness: 0.8,
+      roughness: 0.7,
       side: THREE.DoubleSide
     });
     this.flag = new THREE.Mesh(flagGeo, flagMat);
-    this.flag.position.set(0.55, 2.2, -8.5);
+    this.flag.position.set(0.6, 2.15, -8.9);
     hullGroup.add(this.flag);
-
-    // 8. DECK HARDWARE (Cleats, Anchor, Lifebuoys)
-    const buoyMat = new THREE.MeshStandardMaterial({ color: 0xff5500, roughness: 0.4 });
-    const ringGeo = new THREE.TorusGeometry(0.28, 0.09, 8, 16);
-    for (const sx of [-1.85, 1.85]) {
-      const buoy = new THREE.Mesh(ringGeo, buoyMat);
-      buoy.position.set(sx, 2.4, -1.2);
-      buoy.rotation.y = Math.PI / 2;
-      hullGroup.add(buoy);
-    }
 
     this.group.add(hullGroup);
   }
 
   update(dt, throttle, rudderInput, speedKnots, time) {
-    // 1. Spin propellers according to engine throttle
-    const propSpeed = throttle * 35.0;
+    // 1. Dynamic propeller rotation proportional to engine power
+    const propSpeed = throttle * 45.0;
     for (const prop of this.propellers) {
       prop.rotation.z += propSpeed * dt;
     }
 
-    // 2. Turn rudders with steering input
+    // 2. Rudder hydraulic steering deflection
     for (const rudder of this.rudders) {
-      rudder.rotation.y = -rudderInput * 0.55;
+      rudder.rotation.y = -rudderInput * 0.58;
     }
 
-    // 3. Rotate radar scanner
-    if (this.radarAntenna) {
-      this.radarAntenna.rotation.y += 3.8 * dt;
+    // 3. Continuous radar sweeps
+    for (const radar of this.radarAntennas) {
+      radar.rotation.y += 4.2 * dt;
     }
 
-    // 4. Flutter flag with ship movement and wind
+    // 4. Cloth flutter on aft ensign flag
     if (this.flag) {
-      const flutter = Math.sin(time * 9.0 + this.group.position.z) * 0.18;
-      this.flag.rotation.y = flutter + (rudderInput * 0.2);
+      const flutter = Math.sin(time * 10.0 + this.group.position.z * 0.2) * 0.22;
+      this.flag.rotation.y = flutter + (rudderInput * 0.25);
     }
   }
 }

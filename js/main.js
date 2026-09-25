@@ -126,6 +126,13 @@ class App {
       if (e.key === '2') this.setCamera('bridge');
       if (e.key === '3') this.setCamera('orbit');
       if (e.key === '4') this.setCamera('bow');
+      if (e.key === 'f' || e.key === 'F') {
+        if (!document.fullscreenElement) {
+          document.documentElement.requestFullscreen().catch(() => {});
+        } else {
+          document.exitFullscreen().catch(() => {});
+        }
+      }
       if (e.key === 'm' || e.key === 'M') {
         const isMuted = this.audio.toggleMute();
         this.ui.showToast(isMuted ? 'Audio Muted' : 'Audio Enabled');
@@ -212,8 +219,10 @@ class App {
         -Math.cos(yaw) * Math.cos(pitch) * dist
       );
 
-      // Orient behind the ship's forward heading
+      // Orient behind the ship's forward heading with subtle sea breathing
+      const seaBreathing = Math.sin(this.time * 0.9) * 0.35;
       const camTargetPos = shipPos.clone().sub(forward.clone().multiplyScalar(dist * 0.6)).add(offset);
+      camTargetPos.y += seaBreathing;
       this.camera.position.lerp(camTargetPos, 5.0 * dt);
       
       const lookTarget = shipPos.clone().add(new THREE.Vector3(0, 2.5, 0));
@@ -262,6 +271,17 @@ class App {
 
     // 2. Update hydrodynamics physics
     this.physics.update(dt, this.time, this.weather.currentPreset.waveScale);
+
+    // Dynamic wave impact sounds when bow slices heavy wave swells
+    const vertVelocity = this.physics.linearVelocity.y;
+    if (this.lastVertVelocity !== undefined) {
+      const slap = vertVelocity - this.lastVertVelocity;
+      if (slap > 2.2 && (this.time - (this.lastSlapTime || 0) > 1.2)) {
+        this.audio.playWaveImpact(slap / 2.5);
+        this.lastSlapTime = this.time;
+      }
+    }
+    this.lastVertVelocity = vertVelocity;
 
     // 3. Update procedural ship model animations (props, rudder, radar, flag)
     this.ship.update(dt, this.physics.throttle, this.physics.rudder, this.physics.speedKnots, this.time);

@@ -48,8 +48,10 @@ export class Ocean {
         varying vec3 vWorldPos;
         varying vec3 vNormal;
         varying float vCrest;
+        varying vec2 vUv;
 
         void main() {
+          vUv = uv * 32.0; // Tiled UVs for micro-surface ripple sampling
           vec3 worldPos = (modelMatrix * vec4(position, 1.0)).xyz;
           vec3 displacedPos;
           vec3 displacedNormal;
@@ -77,10 +79,11 @@ export class Ocean {
         varying vec3 vWorldPos;
         varying vec3 vNormal;
         varying float vCrest;
+        varying vec2 vUv;
 
-        // Simple pseudo-noise for foam texturing
+        // Analytical hash & smooth value noise
         float hash(vec2 p) {
-          return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+          return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
         }
 
         float noise(vec2 p) {
@@ -91,49 +94,72 @@ export class Ocean {
                      mix(hash(i + vec2(0.0,1.0)), hash(i + vec2(1.0,1.0)), u.x), u.y);
         }
 
+        // Dual-octave micro ripple normal perturber
+        vec3 getMicroNormal(vec2 uv, float t) {
+          vec2 uv1 = uv * 3.5 + vec2(t * 0.45, t * 0.35);
+          vec2 uv2 = uv * 7.0 - vec2(t * 0.65, t * 0.55);
+          float n1 = noise(uv1);
+          float n2 = noise(uv2);
+          vec2 dN = vec2(n1 - 0.5, n2 - 0.5) * 0.14;
+          return normalize(vec3(dN.x, 1.0, dN.y));
+        }
+
         void main() {
-          vec3 normal = normalize(vNormal);
+          // Combine macroscopic wave normal with high-frequency micro ripples
+          vec3 baseNormal = normalize(vNormal);
+          vec3 microNorm = getMicroNormal(vWorldPos.xz * 0.18, uTime);
+          vec3 normal = normalize(baseNormal + vec3(microNorm.x, 0.0, microNorm.z) * 0.45);
+
           vec3 viewDir = normalize(cameraPosition - vWorldPos);
           vec3 lightDir = normalize(uSunPosition - vWorldPos);
 
-          // Fresnel reflection calculation
-          float fresnel = pow(1.0 - max(dot(viewDir, normal), 0.0), 3.5);
-          fresnel = clamp(fresnel, 0.04, 0.95);
+          // Fresnel reflection calculation (Schlick approximation)
+          float NdotV = max(dot(viewDir, normal), 0.0);
+          float fresnel = 0.03 + (1.0 - 0.03) * pow(1.0 - NdotV, 4.2);
 
-          // Subsurface scattering on wave crests
-          float sss = pow(clamp(dot(viewDir, -lightDir), 0.0, 1.0), 3.0) * max(vCrest, 0.0);
-          vec3 sssColor = vec3(0.05, 0.45, 0.42) * sss * 1.6;
+          // Subsurface scattering on wave crests (light shines through thin water tops)
+          float sss = pow(clamp(dot(viewDir, -lightDir), 0.0, 1.0), 3.5) * max(vCrest, 0.0);
+          vec3 sssColor = mix(uShallowColor, vec3(0.08, 0.62, 0.52), 0.65) * sss * 2.2;
 
-          // Sun Specular (Blinn-Phong)
+          // Blinn-Phong specular glints from sun/moon
           vec3 halfVec = normalize(lightDir + viewDir);
-          float spec = pow(max(dot(normal, halfVec), 0.0), 128.0) * uSunIntensity;
-          vec3 specular = uSunColor * spec * (fresnel * 1.4);
+          float NdotH = max(dot(normal, halfVec), 0.0);
+          float specPower = 180.0;
+          float spec = pow(NdotH, specPower) * uSunIntensity;
+          vec3 specular = uSunColor * spec * (fresnel * 1.8 + 0.15);
 
-          // Base ocean body color gradient based on height/steepness
-          float heightFactor = clamp((vWorldPos.y + 1.8) / 4.5, 0.0, 1.0);
+          // Water body gradient from deep oceanic trough to crest
+          float heightFactor = clamp((vWorldPos.y + 2.0) / 4.8, 0.0, 1.0);
           vec3 waterBody = mix(uDeepColor, uShallowColor, heightFactor);
 
-          // Ambient skylight reflection
-          vec3 skyReflect = mix(uShallowColor * 1.3, uSunColor * 0.8, fresnel);
+          // Sky ambient reflection
+          vec3 skyReflect = mix(uShallowColor * 1.2, uSunColor * 0.9, fresnel);
+          vec3 finalColor = mix(waterBody, skyReflect, fresnel * 0.75) + specular + sssColor;
 
-          vec3 finalColor = mix(waterBody, skyReflect, fresnel * 0.65) + specular + sssColor;
-
-          // Dynamic foam on wave crests
-          float foamNoise = noise(vWorldPos.xz * 2.2 + vec2(uTime * 0.35));
-          float foamThreshold = 0.58;
+          // Multi-layer turbulent wave foam on crests
+          float foamNoise1 = noise(vWorldPos.xz * 1.8 + vec2(uTime * 0.25));
+          float foamNoise2 = noise(vWorldPos.xz * 4.5 - vec2(uTime * 0.4));
+          float combinedFoam = foamNoise1 * 0.65 + foamNoise2 * 0.35;
+          float foamThreshold = 0.52;
           if (vCrest > foamThreshold) {
-            float foamAmount = smoothstep(foamThreshold, 0.9, vCrest) * (foamNoise * 0.8 + 0.4);
-            finalColor = mix(finalColor, uFoamColor, foamAmount);
+            float foamMask = smoothstep(foamThreshold, 0.85, vCrest) * combinedFoam;
+            finalColor = mix(finalColor, uFoamColor, foamMask * 0.9);
           }
 
-          // Bioluminescent glow at night
+          // Bioluminescent plankton glow (night/aurora)
           if (uBioluminescence > 0.5) {
-            float bioPulse = sin(uTime * 2.5 + vWorldPos.x * 0.1) * 0.5 + 0.5;
-            vec3 bioGlow = vec3(0.1, 0.95, 0.65) * (vCrest * 0.8 * bioPulse);
-            finalColor += bioGlow;
+            float bioPulse = sin(uTime * 2.8 + vWorldPos.x * 0.15 + vWorldPos.z * 0.15) * 0.5 + 0.5;
+            vec3 bioColor = vec3(0.08, 0.98, 0.72) * (vCrest * 0.9 * bioPulse);
+            finalColor += bioColor;
           }
 
-          gl_FragColor = vec4(finalColor, 0.96);
+          // Distance fog atmospheric blending at the horizon
+          float dist = length(cameraPosition - vWorldPos);
+          float fogFactor = 1.0 - exp(-dist * 0.0018);
+          vec3 horizonColor = mix(uShallowColor * 0.8, uSunColor * 0.6, 0.5);
+          finalColor = mix(finalColor, horizonColor, clamp(fogFactor * 0.85, 0.0, 0.95));
+
+          gl_FragColor = vec4(finalColor, 0.98);
         }
       `,
       transparent: true,
