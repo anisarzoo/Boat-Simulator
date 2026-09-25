@@ -207,101 +207,189 @@ export class Archipelago {
     group.add(rod);
 
     // Glowing Fresnel Lantern Core
-    // Glowing Fresnel Lantern Lens Core
+    // ── GLOWING FRESNEL LANTERN CORE & RADIANT HALO ──
+    const lanternY = galleryY + 2.4;
+
+    // Incandescent filament / arc core
     const fresnelCore = new THREE.Mesh(
-      new THREE.SphereGeometry(1.2, 16, 16),
-      new THREE.MeshBasicMaterial({ color: 0xfffaea })
+      new THREE.SphereGeometry(1.4, 24, 24),
+      new THREE.MeshBasicMaterial({ color: 0xfffff2 })
     );
-    fresnelCore.position.y = galleryY + 2.4;
+    fresnelCore.position.y = lanternY;
     group.add(fresnelCore);
 
-    // Warm radiant lantern flare halo
+    // Warm radiant lantern flare halo (golden incandescent beacon bloom)
     const lensHalo = new THREE.Mesh(
-      new THREE.SphereGeometry(2.4, 16, 16),
+      new THREE.SphereGeometry(3.6, 24, 24),
       new THREE.MeshBasicMaterial({
-        color: 0xffdd88,
+        color: 0xffd988,
         transparent: true,
-        opacity: 0.35,
+        opacity: 0.55,
         blending: THREE.AdditiveBlending
       })
     );
-    lensHalo.position.y = galleryY + 2.4;
+    lensHalo.position.y = lanternY;
     group.add(lensHalo);
 
-    // Omnidirectional lantern glow light
-    const lanternPoint = new THREE.PointLight(0xffe8a0, 4.0, 80, 1.2);
-    lanternPoint.position.y = galleryY + 2.4;
+    // Outer atmospheric fog dispersal halo around lantern room
+    const outerHalo = new THREE.Mesh(
+      new THREE.SphereGeometry(6.8, 16, 16),
+      new THREE.MeshBasicMaterial({
+        color: 0xffb855,
+        transparent: true,
+        opacity: 0.22,
+        blending: THREE.AdditiveBlending
+      })
+    );
+    outerHalo.position.y = lanternY;
+    group.add(outerHalo);
+
+    // Omnidirectional lantern glow light (illuminates tower & gallery)
+    const lanternPoint = new THREE.PointLight(0xffdf95, 6.5, 120, 1.1);
+    lanternPoint.position.y = lanternY;
     group.add(lanternPoint);
 
-    // ── ROTATING DUAL VOLUMETRIC FRESNEL LIGHT BEAMS ──
+    // ── ROTATING DUAL VOLUMETRIC EXPANDING FRESNEL LIGHT BEAMS ──
     const beamPivot = new THREE.Group();
-    beamPivot.position.set(0, galleryY + 2.4, 0);
+    beamPivot.position.set(0, lanternY, 0);
 
-    // Custom soft volumetric beam shader (fades with distance and at grazing edges)
-    const beamShaderMat = new THREE.ShaderMaterial({
+    const beamLength = 360.0;
+    const rStart = 1.35; // Narrow at lantern aperture
+    const rEnd = 30.0;   // Naturally expands into the sea mist
+
+    // Advanced volumetric light beam shader:
+    // 1. Naturally EXPANDS outward from lantern aperture into the ocean
+    // 2. FADES smoothly with distance (Beer-Lambert atmospheric attenuation + smooth end feathering)
+    // 3. Dense, solid, glowing core with soft Gaussian radial edge falloff (NO hollow shell)
+    // 4. Mie forward-scattering enhancement when looking along beam
+    const createBeamMaterial = (opacityVal, coreConcentration) => new THREE.ShaderMaterial({
       transparent: true,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
       side: THREE.DoubleSide,
       uniforms: {
-        uColor: { value: new THREE.Color(0xffeed0) },
-        uLength: { value: 260.0 }
+        uLength: { value: beamLength },
+        uRadiusStart: { value: rStart },
+        uRadiusEnd: { value: rEnd },
+        uOpacity: { value: opacityVal },
+        uCoreConcentration: { value: coreConcentration }
       },
       vertexShader: `
         varying vec3 vLocalPos;
-        varying vec3 vWorldNormal;
+        varying vec3 vWorldPos;
         varying vec3 vViewDir;
+        varying vec3 vNormal;
+
         void main() {
           vLocalPos = position;
           vec4 worldPos = modelMatrix * vec4(position, 1.0);
-          vWorldNormal = normalize(mat3(modelMatrix) * normal);
+          vWorldPos = worldPos.xyz;
+          vNormal = normalize(mat3(modelMatrix) * normal);
           vViewDir = normalize(cameraPosition - worldPos.xyz);
           gl_Position = projectionMatrix * viewMatrix * worldPos;
         }
       `,
       fragmentShader: `
-        uniform vec3 uColor;
         uniform float uLength;
+        uniform float uRadiusStart;
+        uniform float uRadiusEnd;
+        uniform float uOpacity;
+        uniform float uCoreConcentration;
+
         varying vec3 vLocalPos;
-        varying vec3 vWorldNormal;
+        varying vec3 vWorldPos;
         varying vec3 vViewDir;
+        varying vec3 vNormal;
+
         void main() {
-          // Longitudinal falloff: bright at lens, gently fading out
-          float progress = clamp(vLocalPos.y / uLength, 0.0, 1.0);
-          float distFade = pow(1.0 - progress, 2.0) * smoothstep(0.0, 0.04, progress);
-          
-          // Soft radial edge falloff (smooth gaussian-like edge instead of hard polygon line)
-          float edge = abs(dot(vWorldNormal, vViewDir));
-          float rimFade = pow(1.0 - edge, 1.6);
-          
-          float alpha = 0.085 * distFade * rimFade;
+          // Longitudinal progress along the beam (0.0 at lantern, 1.0 at far end)
+          float t = clamp(vLocalPos.z / uLength, 0.0, 1.0);
+
+          // Atmospheric extinction / Beer-Lambert distance fade
+          // Dazzlingly intense at lantern, exponentially decaying with distance
+          float distFade = exp(-2.3 * t);
+          // Quadratic end-feathering to 0.0 so there is never an abrupt geometry cutoff
+          float endFeather = (1.0 - t * t);
+          // Intense focal boost right at the lantern aperture
+          float sourceBoost = 1.0 + 3.8 * exp(-24.0 * t);
+          float longitudinal = distFade * endFeather * sourceBoost;
+
+          // Radius of the expanding beam at distance z
+          float radiusAtZ = mix(uRadiusStart, uRadiusEnd, t);
+          float radialDist = length(vLocalPos.xy);
+          float rho = clamp(radialDist / max(radiusAtZ, 0.01), 0.0, 1.0);
+
+          // Volumetric Gaussian radial profile: solid, bright core, softly feathering to perimeter
+          float coreGlow = exp(-uCoreConcentration * rho * rho);
+          float softEdge = smoothstep(1.0, 0.28, rho);
+          float radialProfile = coreGlow * softEdge;
+
+          // Forward Mie scattering (beam looks brighter when looking toward the lighthouse)
+          vec3 beamDir = normalize(mat3(modelMatrix) * vec3(0.0, 0.0, 1.0));
+          float forwardScatter = pow(max(0.0, dot(vViewDir, -beamDir)), 3.0) * 0.4 + 0.65;
+
+          // Thickness accumulation when viewing through the cone volume
+          float cosAngle = abs(dot(vNormal, vViewDir));
+          float depthWeight = mix(0.55, 1.0, sqrt(max(0.0, 1.0 - cosAngle * cosAngle)));
+
+          // Realistic incandescent color gradient (white-hot core -> golden amber beam -> warm fog scatter)
+          vec3 coreColor = vec3(1.0, 0.98, 0.92);
+          vec3 amberBeam = vec3(1.0, 0.85, 0.58);
+          vec3 fogScatter = vec3(0.96, 0.72, 0.42);
+
+          vec3 finalColor = mix(coreColor, amberBeam, clamp(rho * 1.35 + t * 0.45, 0.0, 1.0));
+          finalColor = mix(finalColor, fogScatter, clamp(t * 0.75, 0.0, 1.0));
+
+          float alpha = uOpacity * longitudinal * radialProfile * forwardScatter * depthWeight;
           if (alpha < 0.001) discard;
-          gl_FragColor = vec4(uColor, alpha);
+
+          gl_FragColor = vec4(finalColor, alpha);
         }
       `
     });
 
+    // Material 1: Outer atmospheric fog scatter cone
+    const outerBeamMat = createBeamMaterial(0.24, 3.2);
+    // Material 2: Inner concentrated hot core beam
+    const innerCoreMat = createBeamMaterial(0.42, 6.5);
+
+    // Geometry: Cylinder expanding from rStart at Z=0 to rEnd at Z=beamLength
+    const createExpandingConeGeo = (radiusStart, radiusEnd, length) => {
+      const geo = new THREE.CylinderGeometry(radiusStart, radiusEnd, length, 32, 24, true);
+      geo.rotateX(-Math.PI / 2);
+      geo.translate(0, 0, length / 2);
+      return geo;
+    };
+
+    const outerGeo = createExpandingConeGeo(rStart, rEnd, beamLength);
+    const innerGeo = createExpandingConeGeo(rStart * 0.65, rEnd * 0.48, beamLength * 0.95);
+
     for (const angle of [0, Math.PI]) {
-      // Natural maritime spotlight
-      const spot = new THREE.SpotLight(0xfff5e0, 8.0, 480, Math.PI / 18, 0.85, 1.2);
+      const beamGroup = new THREE.Group();
+      beamGroup.rotation.y = angle;
+      // Authentic 1.8° downward pitch toward the sea horizon
+      beamGroup.rotation.x = 0.032;
+
+      // Outer atmospheric fog cone
+      const outerMesh = new THREE.Mesh(outerGeo, outerBeamMat);
+      beamGroup.add(outerMesh);
+
+      // Inner intense core beam
+      const innerMesh = new THREE.Mesh(innerGeo, innerCoreMat);
+      beamGroup.add(innerMesh);
+
+      // Spotlight for direct ocean surface illumination
+      const spot = new THREE.SpotLight(0xffeed0, 9.0, 520, Math.PI / 16, 0.8, 1.15);
       spot.position.set(0, 0, 0);
 
       const target = new THREE.Object3D();
-      target.position.set(Math.sin(angle) * 180, -12.0, Math.cos(angle) * 180);
-      beamPivot.add(target);
+      target.position.set(0, -18.0, 320.0);
+      beamGroup.add(target);
       spot.target = target;
-      beamPivot.add(spot);
+      beamGroup.add(spot);
       this.lighthouseBeams.push(spot);
 
-      // Smooth volumetric light beam cone
-      const beamConeGeo = new THREE.ConeGeometry(18, 260, 32, 1, true);
-      beamConeGeo.rotateX(Math.PI / 2);
-      // Center cone origin at apex (lantern room)
-      beamConeGeo.translate(0, 0, 130);
-
-      const coneMesh = new THREE.Mesh(beamConeGeo, beamShaderMat);
-      coneMesh.rotation.y = angle;
-      beamPivot.add(coneMesh);
+      beamPivot.add(beamGroup);
     }
 
     group.add(beamPivot);
