@@ -42,6 +42,188 @@ export class Archipelago {
     return geo;
   }
 
+  // ── PROCEDURAL COASTAL PINE TREE GENERATOR ──
+  createPineTree(height = 9.0, lean = 0.08) {
+    const group = new THREE.Group();
+
+    const matTrunk = new THREE.MeshStandardMaterial({
+      color: 0x3d2b1f,
+      roughness: 0.9,
+      metalness: 0.05
+    });
+
+    const matNeedles = new THREE.MeshStandardMaterial({
+      color: 0x1e3f24, // Deep coastal pine green
+      roughness: 0.85
+    });
+
+    const matNeedlesTop = new THREE.MeshStandardMaterial({
+      color: 0x2b5532, // Fresh needle tip green
+      roughness: 0.8
+    });
+
+    // Tapered trunk
+    const trunkH = height * 0.45;
+    const trunkGeo = new THREE.CylinderGeometry(0.22, 0.48, trunkH, 7);
+    trunkGeo.translate(0, trunkH / 2, 0);
+    const trunk = new THREE.Mesh(trunkGeo, matTrunk);
+    trunk.castShadow = true;
+    group.add(trunk);
+
+    // 4 Layered Conical Needle Canopies
+    const tiers = 4;
+    for (let t = 0; t < tiers; t++) {
+      const frac = t / (tiers - 1);
+      const tierH = (height * 0.3) * (1.1 - frac * 0.35);
+      const tierR = (height * 0.28) * (1.0 - frac * 0.65);
+      const coneGeo = new THREE.ConeGeometry(tierR, tierH, 8);
+      coneGeo.translate(0, tierH * 0.45, 0);
+      const cone = new THREE.Mesh(coneGeo, t === tiers - 1 ? matNeedlesTop : matNeedles);
+      cone.position.y = trunkH * 0.65 + t * (height * 0.17);
+      cone.rotation.y = (t * 1.6);
+      cone.castShadow = true;
+      group.add(cone);
+    }
+
+    group.rotation.z = lean;
+    return group;
+  }
+
+  // ── PROCEDURAL TROPICAL COCONUT PALM GENERATOR ──
+  createPalmTree(height = 11.0, curveX = 0.3, curveZ = 0.2) {
+    const group = new THREE.Group();
+
+    const matTrunk = new THREE.MeshStandardMaterial({
+      color: 0x6e5238, // Ringed palm trunk bark
+      roughness: 0.85
+    });
+
+    const matFrond = new THREE.MeshStandardMaterial({
+      color: 0x256a28, // Tropical palm frond emerald
+      roughness: 0.75,
+      side: THREE.DoubleSide
+    });
+
+    const matCoconut = new THREE.MeshStandardMaterial({
+      color: 0x48321d,
+      roughness: 0.9
+    });
+
+    // Segmented curved trunk
+    const segments = 6;
+    const segH = height / segments;
+    let currX = 0, currY = 0, currZ = 0;
+
+    for (let s = 0; s < segments; s++) {
+      const t = s / segments;
+      const rBot = THREE.MathUtils.lerp(0.42, 0.24, t);
+      const rTop = THREE.MathUtils.lerp(0.38, 0.22, (s + 1) / segments);
+
+      const segGeo = new THREE.CylinderGeometry(rTop, rBot, segH, 7);
+      segGeo.translate(0, segH / 2, 0);
+      const segMesh = new THREE.Mesh(segGeo, matTrunk);
+      segMesh.position.set(currX, currY, currZ);
+      segMesh.rotation.x = curveZ * (t + 0.2);
+      segMesh.rotation.z = -curveX * (t + 0.2);
+      segMesh.castShadow = true;
+      group.add(segMesh);
+
+      currX += curveX * segH * (t + 0.3);
+      currY += segH * 0.96;
+      currZ += curveZ * segH * (t + 0.3);
+    }
+
+    // Crown of Coconuts
+    for (let c = 0; c < 4; c++) {
+      const angle = (c / 4) * Math.PI * 2;
+      const coco = new THREE.Mesh(new THREE.SphereGeometry(0.35, 6, 6), matCoconut);
+      coco.scale.set(1.0, 1.25, 1.0);
+      coco.position.set(currX + Math.cos(angle) * 0.35, currY - 0.2, currZ + Math.sin(angle) * 0.35);
+      group.add(coco);
+    }
+
+    // Radiating Drooping Palm Fronds
+    const numFronds = 8;
+    for (let f = 0; f < numFronds; f++) {
+      const fAngle = (f / numFronds) * Math.PI * 2 + (Math.random() - 0.5) * 0.2;
+      const frondGroup = new THREE.Group();
+      frondGroup.position.set(currX, currY, currZ);
+      frondGroup.rotation.y = fAngle;
+      frondGroup.rotation.x = 0.45 + (f % 2) * 0.2; // Drooping tilt
+
+      // Sculpted curving leaf blade
+      const leafGeo = new THREE.BufferGeometry();
+      const w = 0.85;
+      const l = 4.8;
+      const verts = new Float32Array([
+         0.0,  0.0,  0.0,
+        -w*0.5, 0.2,  l*0.4,
+         w*0.5, 0.2,  l*0.4,
+        -w*0.7, -0.4, l*0.75,
+         w*0.7, -0.4, l*0.75,
+         0.0,  -1.2, l
+      ]);
+      leafGeo.setAttribute('position', new THREE.BufferAttribute(verts, 3));
+      leafGeo.setIndex([0, 1, 2, 1, 3, 2, 2, 3, 4, 3, 5, 4]);
+      leafGeo.computeVertexNormals();
+
+      const leafMesh = new THREE.Mesh(leafGeo, matFrond);
+      leafMesh.castShadow = true;
+      frondGroup.add(leafMesh);
+      group.add(frondGroup);
+    }
+
+    return group;
+  }
+
+  // ── PROCEDURAL COASTAL BOULDER GENERATOR ──
+  createCoastalRock(size = 3.5) {
+    const geo = new THREE.DodecahedronGeometry(size, 1);
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const v = new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i));
+      v.x += (Math.sin(v.y * 3.0) + Math.cos(v.z * 2.0)) * (size * 0.12);
+      v.y *= 0.65; // Weathered flat profile
+      v.z += (Math.cos(v.x * 2.5)) * (size * 0.12);
+      pos.setXYZ(i, v.x, v.y, v.z);
+    }
+    geo.computeVertexNormals();
+
+    const matRock = new THREE.MeshStandardMaterial({
+      color: 0x48423b, // Weathered marine granite
+      roughness: 0.92,
+      metalness: 0.08
+    });
+
+    const mesh = new THREE.Mesh(geo, matRock);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    return mesh;
+  }
+
+  // ── PROCEDURAL COASTAL BUSH / SHRUB GENERATOR ──
+  createCoastalBush(size = 2.2) {
+    const group = new THREE.Group();
+    const matBush = new THREE.MeshStandardMaterial({
+      color: 0x224825,
+      roughness: 0.88
+    });
+
+    for (let b = 0; b < 3; b++) {
+      const r = size * (0.6 + b * 0.2);
+      const sphere = new THREE.Mesh(new THREE.SphereGeometry(r, 7, 6), matBush);
+      sphere.scale.set(1.1, 0.7, 1.2);
+      sphere.position.set(
+        (b - 1) * size * 0.4,
+        r * 0.45,
+        (Math.random() - 0.5) * size * 0.4
+      );
+      sphere.castShadow = true;
+      group.add(sphere);
+    }
+    return group;
+  }
+
   initIslands() {
     const matRock = new THREE.MeshStandardMaterial({
       color: 0x3d352e, // Basalt & granite crags
@@ -59,7 +241,7 @@ export class Archipelago {
       roughness: 0.75
     });
 
-    // ── ISLAND 1: LIGHTHOUSE ATOLL (Main Island: 450m, 620m) ──
+    // ── ISLAND 1: LIGHTHOUSE ATOLL (Cape Horizon Island: 480m, 650m) ──
     const mainIslandGroup = new THREE.Group();
     mainIslandGroup.position.set(480, 0, 650);
 
@@ -98,6 +280,62 @@ export class Archipelago {
     surfRing.position.y = 0.4;
     mainIslandGroup.add(surfRing);
 
+    // ── FOREST & VEGETATION FOR CAPE HORIZON ISLAND ──
+    // 1. Plateau Grove (Ringed around lighthouse at radius 22m to 48m)
+    const numPlateauPines = 22;
+    for (let i = 0; i < numPlateauPines; i++) {
+      const ang = (i / numPlateauPines) * Math.PI * 2 + (Math.sin(i * 3.7) * 0.2);
+      const rad = 24.0 + (i % 5) * 4.8;
+      const h = 7.5 + (i % 4) * 1.8;
+      const pine = this.createPineTree(h, (Math.sin(i * 2.1) * 0.12));
+      pine.position.set(Math.cos(ang) * rad, 39.5, Math.sin(ang) * rad);
+      mainIslandGroup.add(pine);
+    }
+
+    const numPlateauPalms = 12;
+    for (let i = 0; i < numPlateauPalms; i++) {
+      const ang = (i / numPlateauPalms) * Math.PI * 2 + 0.25;
+      const rad = 34.0 + (i % 3) * 5.5;
+      const h = 9.5 + (i % 3) * 1.5;
+      const palm = this.createPalmTree(h, Math.cos(ang) * 0.28, Math.sin(ang) * 0.28);
+      palm.position.set(Math.cos(ang) * rad, 39.5, Math.sin(ang) * rad);
+      mainIslandGroup.add(palm);
+    }
+
+    // Plateau shrubs
+    for (let i = 0; i < 18; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const rad = 22.0 + Math.random() * 26.0;
+      const bush = this.createCoastalBush(1.8 + Math.random() * 1.2);
+      bush.position.set(Math.cos(ang) * rad, 39.5, Math.sin(ang) * rad);
+      mainIslandGroup.add(bush);
+    }
+
+    // 2. Beach Apron Palms & Coastal Boulders
+    const numBeachPalms = 16;
+    for (let i = 0; i < numBeachPalms; i++) {
+      const ang = (i / numBeachPalms) * Math.PI * 2 + 0.15;
+      const rad = 114.0 + (i % 3) * 6.5;
+      const h = 10.0 + (i % 4) * 1.8;
+      // Leaning towards the sea
+      const leanOutX = Math.cos(ang) * 0.42;
+      const leanOutZ = Math.sin(ang) * 0.42;
+      const palm = this.createPalmTree(h, leanOutX, leanOutZ);
+      palm.position.set(Math.cos(ang) * rad, 1.2, Math.sin(ang) * rad);
+      mainIslandGroup.add(palm);
+    }
+
+    // Beach & Surf Boulders
+    for (let i = 0; i < 26; i++) {
+      const ang = (i / 26) * Math.PI * 2 + (Math.sin(i * 1.9) * 0.3);
+      const rad = 108.0 + (i % 4) * 9.0;
+      const rockSize = 2.5 + (i % 3) * 1.8;
+      const boulder = this.createCoastalRock(rockSize);
+      boulder.position.set(Math.cos(ang) * rad, 1.0, Math.sin(ang) * rad);
+      boulder.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
+      mainIslandGroup.add(boulder);
+    }
+
     this.scene.add(mainIslandGroup);
     this.islands.push({ pos: mainIslandGroup.position, radius: 130, name: 'Cape Horizon Island' });
 
@@ -107,7 +345,7 @@ export class Archipelago {
 
     const stackGeo1 = this.createIslandGeometry(45, 32, 20);
     const stack1 = new THREE.Mesh(stackGeo1, matRock);
-    stack1.position.set(0, 14, 0);
+    stack1.position.y = 14;
     stack1.castShadow = true;
     stackGroup.add(stack1);
 
@@ -117,8 +355,87 @@ export class Archipelago {
     stack2.castShadow = true;
     stackGroup.add(stack2);
 
+    // Weather-beaten cliffside pines on sea stacks
+    for (let i = 0; i < 8; i++) {
+      const ang = (i / 8) * Math.PI * 2;
+      const rad = 14.0 + (i % 3) * 6.0;
+      const pine = this.createPineTree(6.5 + (i % 3) * 1.5, 0.22);
+      pine.position.set(Math.cos(ang) * rad, 28.0, Math.sin(ang) * rad);
+      stackGroup.add(pine);
+    }
+
+    // Jagged sea boulders around stacks
+    for (let i = 0; i < 14; i++) {
+      const ang = (i / 14) * Math.PI * 2;
+      const rad = 42.0 + (i % 3) * 8.0;
+      const boulder = this.createCoastalRock(3.0 + (i % 3) * 1.5);
+      boulder.position.set(Math.cos(ang) * rad, 0.8, Math.sin(ang) * rad);
+      stackGroup.add(boulder);
+    }
+
     this.scene.add(stackGroup);
     this.islands.push({ pos: stackGroup.position, radius: 75, name: 'The Needles Sea Stacks' });
+
+    // ── ISLAND 3: EMERALD SANCTUARY ATOLL (-340m, -420m) ──
+    const emeraldGroup = new THREE.Group();
+    emeraldGroup.position.set(-340, 0, -420);
+
+    const emeraldRockGeo = this.createIslandGeometry(75, 26, 24);
+    const emeraldRock = new THREE.Mesh(emeraldRockGeo, matRock);
+    emeraldRock.position.y = 10;
+    emeraldRock.castShadow = true;
+    emeraldGroup.add(emeraldRock);
+
+    // Lush green tropical canopy mound
+    const emeraldTurfGeo = new THREE.CylinderGeometry(40, 52, 5, 20);
+    const emeraldTurf = new THREE.Mesh(emeraldTurfGeo, matGreenTurf);
+    emeraldTurf.position.y = 21.0;
+    emeraldTurf.receiveShadow = true;
+    emeraldGroup.add(emeraldTurf);
+
+    // White tropical sand beach apron
+    const emeraldBeachGeo = new THREE.CylinderGeometry(80, 95, 3.2, 28);
+    const emeraldBeach = new THREE.Mesh(emeraldBeachGeo, matBeachSand);
+    emeraldBeach.position.y = 0.6;
+    emeraldBeach.receiveShadow = true;
+    emeraldGroup.add(emeraldBeach);
+
+    // Turquoise surf foam ring
+    const emeraldSurfGeo = new THREE.RingGeometry(78, 102, 32);
+    emeraldSurfGeo.rotateX(-Math.PI / 2);
+    const emeraldSurf = new THREE.Mesh(emeraldSurfGeo, surfMat);
+    emeraldSurf.position.y = 0.4;
+    emeraldGroup.add(emeraldSurf);
+
+    // Dense tropical palm forest on Emerald Island (32 palms & pines)
+    for (let i = 0; i < 20; i++) {
+      const ang = (i / 20) * Math.PI * 2 + (i % 3) * 0.4;
+      const rad = 12.0 + (i % 4) * 7.5;
+      const h = 8.5 + (i % 3) * 2.2;
+      const palm = this.createPalmTree(h, Math.cos(ang) * 0.35, Math.sin(ang) * 0.35);
+      palm.position.set(Math.cos(ang) * rad, 23.5, Math.sin(ang) * rad);
+      emeraldGroup.add(palm);
+    }
+
+    for (let i = 0; i < 14; i++) {
+      const ang = (i / 14) * Math.PI * 2;
+      const rad = 78.0 + (i % 3) * 5.0;
+      const palm = this.createPalmTree(10.0, Math.cos(ang) * 0.45, Math.sin(ang) * 0.45);
+      palm.position.set(Math.cos(ang) * rad, 1.2, Math.sin(ang) * rad);
+      emeraldGroup.add(palm);
+    }
+
+    // Coastal rocks around Emerald Atoll
+    for (let i = 0; i < 18; i++) {
+      const ang = (i / 18) * Math.PI * 2;
+      const rad = 76.0 + (i % 3) * 7.0;
+      const rock = this.createCoastalRock(2.8 + (i % 3) * 1.6);
+      rock.position.set(Math.cos(ang) * rad, 0.9, Math.sin(ang) * rad);
+      emeraldGroup.add(rock);
+    }
+
+    this.scene.add(emeraldGroup);
+    this.islands.push({ pos: emeraldGroup.position, radius: 95, name: 'Emerald Sanctuary Atoll' });
   }
 
   // ── 2. HISTORIC COASTAL LIGHTHOUSE WITH ROTATING FRESNEL BEAM ──

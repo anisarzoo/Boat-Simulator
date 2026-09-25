@@ -45,6 +45,10 @@ export class ShipPhysics {
     this.bearingToWaypoint = 0;
     this.currentDepthMeters = 58.0;
     this.shallowAlarm = false;
+
+    // Collision alert & telemetry
+    this.collisionAlert = null;
+    this.collisionTimer = 0;
   }
 
   setControls(throttleInput, rudderInput) {
@@ -60,7 +64,11 @@ export class ShipPhysics {
     this.autopilot = active;
   }
 
-  update(dt, time, waveScale = 1.0, archipelago = null) {
+  update(dt, time, waveScale = 1.0, archipelago = null, traffic = null, audio = null) {
+    if (this.collisionTimer > 0) {
+      this.collisionTimer -= dt;
+      if (this.collisionTimer <= 0) this.collisionAlert = null;
+    }
     // 0. Waypoint Autopilot Navigation
     if (this.autopilot) {
       const wp = this.waypoints[this.activeWaypointIndex];
@@ -198,23 +206,31 @@ export class ShipPhysics {
         const dx = this.position.x - isle.pos.x;
         const dz = this.position.z - isle.pos.z;
         const dist = Math.sqrt(dx * dx + dz * dz);
-        const minClearance = isle.radius + 12.0;
+        const minClearance = isle.radius + 14.0;
         if (dist < minClearance && dist > 0.1) {
           const nx = dx / dist;
           const nz = dz / dist;
           const penetration = minClearance - dist;
-          this.position.x += nx * penetration * 0.9;
-          this.position.z += nz * penetration * 0.9;
+          this.position.x += nx * penetration * 0.95;
+          this.position.z += nz * penetration * 0.95;
 
-          // Kill velocity heading into shore
+          // Kill velocity heading into shore & rebound slightly
           const vDotN = this.linearVelocity.x * nx + this.linearVelocity.z * nz;
           if (vDotN < 0) {
-            this.linearVelocity.x -= nx * vDotN * 1.6;
-            this.linearVelocity.z -= nz * vDotN * 1.6;
+            this.linearVelocity.x -= nx * vDotN * 1.5;
+            this.linearVelocity.z -= nz * vDotN * 1.5;
+            if (audio && Math.abs(vDotN) > 0.8) {
+              audio.playWaveImpact(Math.min(3.2, 1.2 + Math.abs(vDotN) * 0.5));
+            }
+            this.collisionAlert = `GROUNDING: Shoal reef contact at ${isle.name || 'Island'}!`;
+            this.collisionTimer = 2.5;
           }
         }
       }
     }
+
+    // AI Traffic Vessels Mutual Collision Response
+    this.checkTrafficCollisions(traffic, dt, audio);
 
     this.position.addScaledVector(this.linearVelocity, dt);
 
@@ -253,6 +269,144 @@ export class ShipPhysics {
     if (archipelago) {
       this.currentDepthMeters = archipelago.getWaterDepthAt(this.position);
       this.shallowAlarm = (this.currentDepthMeters < 8.0);
+    }
+  }
+
+  // 10. AI Marine Traffic Vessels Mutual Rigid-Body Collision Resolution (2D OBB SAT)
+  checkTrafficCollisions(traffic, dt, audio = null) {
+    if (!traffic || !traffic.vessels || traffic.vessels.length === 0) return;
+
+    // Player Hull Extents: Length 14.5m, Beam 4.6m
+    const pL = 14.5;
+    const pW = 4.6;
+    const playerHalfL = pL * 0.5;
+    const playerHalfW = pW * 0.5;
+    const playerMass = SHIP_CONFIG.mass; // 12,000 kg
+    const playerI = playerMass * (playerHalfL * playerHalfL + playerHalfW * playerHalfW) / 12.0;
+
+    // Player Orientation & Unit Axes in X-Z
+    const pFwd = new THREE.Vector3(0, 0, 1).applyQuaternion(this.quaternion);
+    const pHead = Math.atan2(pFwd.x, pFwd.z);
+    const a1 = { x: Math.sin(pHead), z: Math.cos(pHead) };
+    const a2 = { x: Math.cos(pHead), z: -Math.sin(pHead) };
+
+    for (const v of traffic.vessels) {
+      const vL = v.length || 24.0;
+      const vW = v.beam || (vL > 50 ? 19.0 : (vL > 22 ? 7.5 : 5.0));
+      const aiHalfL = vL * 0.5;
+      const aiHalfW = vW * 0.5;
+      const aiMass = v.mass || (vL > 50 ? 45000000 : (vL > 22 ? 220000 : 35000));
+      const aiI = aiMass * (aiHalfL * aiHalfL + aiHalfW * aiHalfW) / 12.0;
+
+      // Broadphase distance rejection
+      const dx = this.position.x - v.pos.x;
+      const dz = this.position.z - v.pos.z;
+      const distSq = dx * dx + dz * dz;
+      const maxColDist = playerHalfL + aiHalfL + 4.0;
+      if (distSq > maxColDist * maxColDist) continue;
+
+      // AI Orientation Axes
+      const aiHead = v.heading || 0;
+      const b1 = { x: Math.sin(aiHead), z: Math.cos(aiHead) };
+      const b2 = { x: Math.cos(aiHead), z: -Math.sin(aiHead) };
+
+      // Separating Axis Theorem (SAT) on 4 candidate axes
+      const axes = [a1, a2, b1, b2];
+      let minOverlap = Infinity;
+      let minAxis = null;
+      let separated = false;
+
+      for (let i = 0; i < 4; i++) {
+        const u = axes[i];
+        const centerDist = Math.abs(dx * u.x + dz * u.z);
+        const rA = playerHalfL * Math.abs(a1.x * u.x + a1.z * u.z) +
+                   playerHalfW * Math.abs(a2.x * u.x + a2.z * u.z);
+        const rB = aiHalfL * Math.abs(b1.x * u.x + b1.z * u.z) +
+                   aiHalfW * Math.abs(b2.x * u.x + b2.z * u.z);
+
+        const overlap = (rA + rB) - centerDist;
+        if (overlap <= 0) {
+          separated = true;
+          break;
+        }
+        if (overlap < minOverlap) {
+          minOverlap = overlap;
+          minAxis = u;
+        }
+      }
+
+      if (separated || !minAxis) continue;
+
+      // Contact normal pointing from AI vessel to player
+      let nx = minAxis.x;
+      let nz = minAxis.z;
+      if (dx * nx + dz * nz < 0) {
+        nx = -nx;
+        nz = -nz;
+      }
+
+      // 1. Positional Separation (Displace according to mass ratio)
+      const totalMass = playerMass + aiMass;
+      const playerWeight = Math.min(0.98, aiMass / totalMass);
+      const aiWeight = Math.max(0.02, playerMass / totalMass);
+
+      this.position.x += nx * minOverlap * playerWeight * 1.05;
+      this.position.z += nz * minOverlap * playerWeight * 1.05;
+      v.pos.x -= nx * minOverlap * aiWeight * 1.05;
+      v.pos.z -= nz * minOverlap * aiWeight * 1.05;
+
+      // 2. Relative Velocities & Momentum Impulse
+      const aiSpeedMps = (v.speed || 0) * 0.514444;
+      const aiVelX = Math.sin(aiHead) * aiSpeedMps;
+      const aiVelZ = Math.cos(aiHead) * aiSpeedMps;
+
+      // Relative collision point on player hull
+      const rx = -nx * Math.min(playerHalfL, playerHalfW * 1.6);
+      const rz = -nz * Math.min(playerHalfL, playerHalfW * 1.6);
+
+      const ptVelX = this.linearVelocity.x - this.angularVelocity.y * rz;
+      const ptVelZ = this.linearVelocity.z + this.angularVelocity.y * rx;
+      const vRelX = ptVelX - aiVelX;
+      const vRelZ = ptVelZ - aiVelZ;
+
+      const normRelVel = vRelX * nx + vRelZ * nz;
+
+      if (normRelVel < 0) {
+        const restitution = 0.35;
+        const rCrossN = rx * nz - rz * nx;
+        const effMassInv = (1.0 / playerMass) + (1.0 / aiMass) + (rCrossN * rCrossN) / playerI;
+        const impulseMag = -(1.0 + restitution) * normRelVel / effMassInv;
+
+        // Apply linear rebound to player
+        this.linearVelocity.x += (nx * impulseMag) / playerMass;
+        this.linearVelocity.z += (nz * impulseMag) / playerMass;
+
+        // Apply yaw torque to player
+        this.angularVelocity.y += (rCrossN * impulseMag) / playerI;
+
+        // Dynamic impact roll tilt (boat heels outward violently from collision)
+        this.angularVelocity.z += (Math.random() - 0.5) * Math.min(1.4, impulseMag / 35000.0);
+
+        // Hull friction scrub along tangent
+        const tx = -nz;
+        const tz = nx;
+        const tangRelVel = vRelX * tx + vRelZ * tz;
+        const frictionImpulse = -tangRelVel * 0.4 * Math.min(1.0, impulseMag / 15000.0);
+        this.linearVelocity.x += tx * frictionImpulse;
+        this.linearVelocity.z += tz * frictionImpulse;
+
+        // Deflect AI vessel
+        if (v.speed) v.speed = Math.max(1.5, v.speed * 0.8);
+        v.heading += (rCrossN > 0 ? 0.05 : -0.05);
+
+        // Sound effect
+        if (audio) {
+          audio.playWaveImpact(Math.min(3.5, 1.2 + Math.abs(normRelVel) * 0.5));
+        }
+
+        this.collisionAlert = `COLLISION: Hull impact with ${v.name}!`;
+        this.collisionTimer = 2.5;
+      }
     }
   }
 }

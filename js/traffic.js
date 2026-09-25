@@ -318,30 +318,39 @@ export class MarineTraffic {
         name: 'MV ATLANTIC PHOENIX',
         type: 'Container Carrier',
         group: container,
-        pos: new THREE.Vector3(280, 0, 380),
-        heading: 2.35, // Heading SW
-        speed: 15.0,   // Knots
+        pos: new THREE.Vector3(320, 0, 220),
+        heading: 2.15, // Heading SW along deep-water passage
+        speed: 14.5,   // Knots
         length: 110,
+        beam: 19.0,
+        mass: 45000000,
+        turnRate: 0.28,
         hornCooldown: 0
       },
       {
         name: 'FV NORTHERN SEAS',
         type: 'Commercial Trawler',
         group: trawler,
-        pos: new THREE.Vector3(-340, 0, 180),
-        heading: -0.6,
+        pos: new THREE.Vector3(-240, 0, 140),
+        heading: 0.75, // Heading NE
         speed: 9.5,
         length: 26,
+        beam: 7.5,
+        mass: 220000,
+        turnRate: 0.65,
         hornCooldown: 0
       },
       {
         name: 'SY AURA OCEANIS',
         type: 'Sailing Yacht',
         group: sailboat,
-        pos: new THREE.Vector3(190, 0, -280),
-        heading: 3.1,
+        pos: new THREE.Vector3(140, 0, -240),
+        heading: -2.3, // Heading NW
         speed: 12.0,
         length: 20,
+        beam: 5.0,
+        mass: 35000,
+        turnRate: 0.85,
         hornCooldown: 0
       }
     ];
@@ -380,11 +389,101 @@ export class MarineTraffic {
     return null;
   }
 
-  update(dt, time, shipPosition) {
+  update(dt, time, shipPosition, archipelago = null, playerPhysics = null) {
+    // 1. AI-to-AI vessel separation & collision avoidance
+    for (let i = 0; i < this.vessels.length; i++) {
+      for (let j = i + 1; j < this.vessels.length; j++) {
+        const v1 = this.vessels[i];
+        const v2 = this.vessels[j];
+        const dx = v1.pos.x - v2.pos.x;
+        const dz = v1.pos.z - v2.pos.z;
+        const distAI = Math.hypot(dx, dz);
+        const minDist = (v1.length + v2.length) * 0.55 + 24.0;
+
+        if (distAI < minDist && distAI > 0.1) {
+          const nx = dx / distAI;
+          const nz = dz / distAI;
+          const pen = minDist - distAI;
+          const totalM = v1.mass + v2.mass;
+          const w1 = v2.mass / totalM;
+          const w2 = v1.mass / totalM;
+
+          v1.pos.x += nx * pen * w1;
+          v1.pos.z += nz * pen * w1;
+          v2.pos.x -= nx * pen * w2;
+          v2.pos.z -= nz * pen * w2;
+
+          v1.heading += 0.35 * dt;
+          v2.heading -= 0.35 * dt;
+        }
+      }
+    }
+
+    // 2. Individual Vessel Navigation, Island Avoidance & Hydrodynamics
     for (const v of this.vessels) {
       v.hornCooldown -= dt;
 
-      // Cruising forward locomotion along course
+      // ── A. Island Obstacle Avoidance & Hard Reef Barrier ──
+      if (archipelago && archipelago.islands) {
+        for (const isle of archipelago.islands) {
+          const toIsleX = isle.pos.x - v.pos.x;
+          const toIsleZ = isle.pos.z - v.pos.z;
+          const dToIsle = Math.hypot(toIsleX, toIsleZ);
+          const safeRadius = isle.radius + v.length * 0.55 + 26.0;
+
+          // Forward lookahead cone
+          const fwdX = Math.sin(v.heading);
+          const fwdZ = Math.cos(v.heading);
+          const proj = toIsleX * fwdX + toIsleZ * fwdZ;
+          const lookahead = Math.max(v.length * 1.8, (v.speed * 0.514444) * 16.0);
+
+          if (proj > 0 && proj < lookahead + safeRadius) {
+            const perpSq = dToIsle * dToIsle - proj * proj;
+            if (perpSq < safeRadius * safeRadius) {
+              // On collision course: steer away from island center
+              const cross = fwdX * toIsleZ - fwdZ * toIsleX;
+              const steerDir = cross > 0 ? -1 : 1; // Left or Right away from island
+              const urgency = 1.0 - Math.min(1.0, proj / (lookahead + safeRadius));
+              const steerAmt = steerDir * v.turnRate * (urgency * 1.8 + 0.4);
+              v.heading += steerAmt * dt;
+            }
+          }
+
+          // Hard reef shoreline boundary (ABSOLUTELY NO ISLAND PENETRATION)
+          if (dToIsle < safeRadius && dToIsle > 0.1) {
+            const nx = (v.pos.x - isle.pos.x) / dToIsle;
+            const nz = (v.pos.z - isle.pos.z) / dToIsle;
+            const pen = safeRadius - dToIsle;
+            v.pos.x += nx * pen;
+            v.pos.z += nz * pen;
+
+            // Turn heading smoothly outward toward open sea
+            const outwardAngle = Math.atan2(nx, nz);
+            v.heading = THREE.MathUtils.lerp(v.heading, outwardAngle, Math.min(1.0, 3.5 * dt));
+          }
+        }
+      }
+
+      // ── B. Player Vessel Collision Avoidance Steering ──
+      if (playerPhysics && playerPhysics.position) {
+        const toPlayerX = playerPhysics.position.x - v.pos.x;
+        const toPlayerZ = playerPhysics.position.z - v.pos.z;
+        const distToPlayer = Math.hypot(toPlayerX, toPlayerZ);
+        const fwdX = Math.sin(v.heading);
+        const fwdZ = Math.cos(v.heading);
+        const projPlayer = toPlayerX * fwdX + toPlayerZ * fwdZ;
+
+        if (projPlayer > 0 && projPlayer < v.length * 1.2 + 30.0 && distToPlayer < v.length + 35.0) {
+          // Player directly ahead in shipping channel: sound horn warning and steer
+          if (v.hornCooldown <= 0) {
+            v.hornCooldown = 12.0;
+          }
+          const crossPlayer = fwdX * toPlayerZ - fwdZ * toPlayerX;
+          v.heading += (crossPlayer > 0 ? -0.4 : 0.4) * dt;
+        }
+      }
+
+      // ── C. Cruising Forward Locomotion ──
       const speedMps = v.speed * 0.514444; // Knots to m/s
       v.pos.x += Math.sin(v.heading) * speedMps * dt;
       v.pos.z += Math.cos(v.heading) * speedMps * dt;
@@ -398,10 +497,25 @@ export class MarineTraffic {
       if (shipPosition) {
         const dx = v.pos.x - shipPosition.x;
         const dz = v.pos.z - shipPosition.z;
-        if (Math.sqrt(dx * dx + dz * dz) > 1600) {
+        if (Math.hypot(dx, dz) > 1600) {
           // Respawn on opposite perimeter boundary
-          v.pos.x = shipPosition.x - dx * 0.9;
-          v.pos.z = shipPosition.z - dz * 0.9;
+          let newX = shipPosition.x - dx * 0.88;
+          let newZ = shipPosition.z - dz * 0.88;
+
+          // Ensure respawn coordinate is NOT inside any island
+          if (archipelago && archipelago.islands) {
+            for (const isle of archipelago.islands) {
+              const dIsle = Math.hypot(newX - isle.pos.x, newZ - isle.pos.z);
+              if (dIsle < isle.radius + 60.0) {
+                const angle = Math.atan2(newZ - isle.pos.z, newX - isle.pos.x);
+                newX = isle.pos.x + Math.cos(angle) * (isle.radius + 75.0);
+                newZ = isle.pos.z + Math.sin(angle) * (isle.radius + 75.0);
+              }
+            }
+          }
+
+          v.pos.x = newX;
+          v.pos.z = newZ;
         }
       }
 

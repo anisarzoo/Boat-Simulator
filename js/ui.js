@@ -348,6 +348,16 @@ export class UIController {
       }
     }
 
+    // Collision & Grounding Warning Toast
+    if (physics.collisionAlert && physics.collisionTimer > 0) {
+      if (this.lastDisplayedAlert !== physics.collisionAlert) {
+        this.showToast(`⚠️ ${physics.collisionAlert}`);
+        this.lastDisplayedAlert = physics.collisionAlert;
+      }
+    } else {
+      this.lastDisplayedAlert = null;
+    }
+
     // Live FPS readout
     this.frameCount++;
     const now = performance.now();

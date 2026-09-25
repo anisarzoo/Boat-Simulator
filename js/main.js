@@ -376,8 +376,8 @@ class App {
     // 1. Process player inputs
     this.handleControls();
 
-    // 2. Update hydrodynamics physics & live depth sounding
-    this.physics.update(dt, this.time, this.weather.currentPreset.waveScale, this.islands);
+    // 2. Update hydrodynamics physics, mutual traffic collision & live depth sounding
+    this.physics.update(dt, this.time, this.weather.currentPreset.waveScale, this.islands, this.traffic, this.audio);
 
     // Shallow water sonar warning alarm
     if (this.physics.shallowAlarm && (this.time - (this.lastShallowPing || 0) > 1.8)) {
@@ -414,8 +414,8 @@ class App {
     this.particles.update(dt, this.ship.group, this.physics, isStorm, this.camera);
 
     // 7. Update Wildlife, AI Traffic, Islands, Buoys, Seagulls, and Clouds
-    this.wildlife.update(dt, this.time, this.ship.group.position, this.ship.group.quaternion, this.physics.speedKnots);
-    this.traffic.update(dt, this.time, this.ship.group.position);
+    this.wildlife.update(dt, this.time, this.ship.group.position, this.ship.group.quaternion, this.physics.speedKnots, this.islands);
+    this.traffic.update(dt, this.time, this.ship.group.position, this.islands, this.physics);
     this.islands.update(dt, this.weather ? this.weather.currentPreset : null);
     this.buoys.update(dt, this.time, this.weather.currentPreset.waveScale, this.ship.group.position);
     this.seagulls.update(dt, this.time, this.ship.group.position, this.ship.group.quaternion, this.physics.speedKnots);

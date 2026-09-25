@@ -544,7 +544,7 @@ export class MarineWildlife {
     }
   }
 
-  update(dt, time, shipPosition, shipQuaternion, shipSpeedKnots = 0) {
+  update(dt, time, shipPosition, shipQuaternion, shipSpeedKnots = 0, archipelago = null) {
     if (!shipPosition) return;
 
     const shipForward = new THREE.Vector3(0, 0, 1);
@@ -560,6 +560,29 @@ export class MarineWildlife {
     for (const d of this.dolphins) {
       // 1. Position always integrates smoothly from velocity (NEVER teleports or lerps rigidly to ship)
       d.pos.addScaledVector(d.vel, dt);
+
+      // Reef & Island Shoreline Avoidance (Prevents dolphins from swimming under or into islands)
+      if (archipelago && archipelago.islands) {
+        for (const isle of archipelago.islands) {
+          const ddx = d.pos.x - isle.pos.x;
+          const ddz = d.pos.z - isle.pos.z;
+          const dDist = Math.hypot(ddx, ddz);
+          const minClearance = isle.radius + 18.0;
+          if (dDist < minClearance && dDist > 0.01) {
+            const inx = ddx / dDist;
+            const inz = ddz / dDist;
+            d.pos.x = isle.pos.x + inx * minClearance;
+            d.pos.z = isle.pos.z + inz * minClearance;
+
+            // Deflect velocity radially away from shore
+            const vDotN = d.vel.x * inx + d.vel.z * inz;
+            if (vDotN < 0) {
+              d.vel.x -= inx * vDotN * 1.6;
+              d.vel.z -= inz * vDotN * 1.6;
+            }
+          }
+        }
+      }
 
       const waveSample = sampleOcean(d.pos.x, d.pos.z, time, 1.0);
 
@@ -625,9 +648,23 @@ export class MarineWildlife {
           const fwdDist = 11.5 + Math.sin(time * 0.65 + d.id * 1.6) * 2.6;
           const latDist = d.preferredSide + Math.sin(time * 0.42 + d.id * 2.1) * 1.6;
 
-          const sweetSpot = shipPosition.clone()
+          let sweetSpot = shipPosition.clone()
             .addScaledVector(shipForward, fwdDist)
             .addScaledVector(shipRight, latDist);
+
+          // Avoid sweet spot projecting inside island
+          if (archipelago && archipelago.islands) {
+            for (const isle of archipelago.islands) {
+              const ssDist = Math.hypot(sweetSpot.x - isle.pos.x, sweetSpot.z - isle.pos.z);
+              const minClearance = isle.radius + 22.0;
+              if (ssDist < minClearance && ssDist > 0.01) {
+                const snx = (sweetSpot.x - isle.pos.x) / ssDist;
+                const snz = (sweetSpot.z - isle.pos.z) / ssDist;
+                sweetSpot.x = isle.pos.x + snx * minClearance;
+                sweetSpot.z = isle.pos.z + snz * minClearance;
+              }
+            }
+          }
 
           // Hydrodynamic attraction & velocity matching
           const toSweetSpot = sweetSpot.clone().sub(d.pos);
@@ -650,9 +687,23 @@ export class MarineWildlife {
           // Idle swimming in wide, peaceful orbits around vessel
           const orbitAngle = time * 0.24 + (d.id * Math.PI);
           const orbitRadius = 18.0 + Math.sin(time * 0.16 + d.id) * 6.5;
-          const orbitTarget = shipPosition.clone().add(
+          let orbitTarget = shipPosition.clone().add(
             new THREE.Vector3(Math.cos(orbitAngle) * orbitRadius, 0, Math.sin(orbitAngle) * orbitRadius)
           );
+
+          // Avoid orbit target projecting inside island
+          if (archipelago && archipelago.islands) {
+            for (const isle of archipelago.islands) {
+              const otDist = Math.hypot(orbitTarget.x - isle.pos.x, orbitTarget.z - isle.pos.z);
+              const minClearance = isle.radius + 22.0;
+              if (otDist < minClearance && otDist > 0.01) {
+                const onx = (orbitTarget.x - isle.pos.x) / otDist;
+                const onz = (orbitTarget.z - isle.pos.z) / otDist;
+                orbitTarget.x = isle.pos.x + onx * minClearance;
+                orbitTarget.z = isle.pos.z + onz * minClearance;
+              }
+            }
+          }
 
           const toOrbit = orbitTarget.clone().sub(d.pos);
           toOrbit.y = 0;
@@ -709,6 +760,36 @@ export class MarineWildlife {
       w.swimCycle += dt * 0.8;
       w.timer -= dt;
 
+      // Island & Shoal Reef Avoidance Steering
+      if (archipelago && archipelago.islands) {
+        for (const isle of archipelago.islands) {
+          const wdx = w.pos.x - isle.pos.x;
+          const wdz = w.pos.z - isle.pos.z;
+          const wDist = Math.hypot(wdx, wdz);
+          const safeWhaleRadius = isle.radius + 45.0;
+
+          // Forward lookahead avoidance: turn smoothly away from island
+          const lookaheadZone = safeWhaleRadius + 75.0;
+          if (wDist < lookaheadZone) {
+            const toIsleAngle = Math.atan2(isle.pos.x - w.pos.x, isle.pos.z - w.pos.z);
+            let angleDiff = w.heading - toIsleAngle;
+            while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+            while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+            const turnSign = angleDiff > 0 ? 1 : -1;
+            w.heading += turnSign * 0.75 * dt;
+          }
+
+          // Hard reef barrier: never swim under or through island landmass
+          if (wDist < safeWhaleRadius && wDist > 0.01) {
+            const wnx = wdx / wDist;
+            const wnz = wdz / wDist;
+            w.pos.x = isle.pos.x + wnx * (safeWhaleRadius + 1.0);
+            w.pos.z = isle.pos.z + wnz * (safeWhaleRadius + 1.0);
+            w.heading = Math.atan2(wnx, wnz) + (w.id % 2 === 0 ? 0.35 : -0.35);
+          }
+        }
+      }
+
       const wForward = new THREE.Vector3(Math.sin(w.heading), 0, Math.cos(w.heading));
       w.pos.addScaledVector(wForward, 3.2 * dt);
 
@@ -716,11 +797,22 @@ export class MarineWildlife {
       if (distFromShip > 480) {
         // Smooth oceanic re-centering far out of view (deep underwater)
         const spawnAngle = Math.random() * Math.PI * 2;
-        w.pos.set(
-          shipPosition.x + Math.cos(spawnAngle) * 320,
-          -14.0,
-          shipPosition.z + Math.sin(spawnAngle) * 320
-        );
+        let newWx = shipPosition.x + Math.cos(spawnAngle) * 320;
+        let newWz = shipPosition.z + Math.sin(spawnAngle) * 320;
+
+        // Ensure spawn is in deep open water, not inside an island
+        if (archipelago && archipelago.islands) {
+          for (const isle of archipelago.islands) {
+            const dIsle = Math.hypot(newWx - isle.pos.x, newWz - isle.pos.z);
+            if (dIsle < isle.radius + 60.0) {
+              const awayAngle = Math.atan2(newWz - isle.pos.z, newWx - isle.pos.x);
+              newWx = isle.pos.x + Math.cos(awayAngle) * (isle.radius + 75.0);
+              newWz = isle.pos.z + Math.sin(awayAngle) * (isle.radius + 75.0);
+            }
+          }
+        }
+
+        w.pos.set(newWx, -14.0, newWz);
         w.heading = spawnAngle + Math.PI + (Math.random() - 0.5) * 0.8;
         w.state = 'deep';
         w.timer = 8.0 + Math.random() * 6.0;
