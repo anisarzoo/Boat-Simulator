@@ -136,6 +136,16 @@
           </svg>
         </button>
 
+        <!-- Keyboard Controls Cheatsheet Modal Button -->
+        <button id="controlsBtn" class="icon-btn" title="Keyboard Controls Guide [K]" aria-label="Keyboard Controls">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="4" width="20" height="16" rx="2" ry="2"/>
+            <line x1="6" y1="8" x2="6" y2="8"/><line x1="10" y1="8" x2="10" y2="8"/><line x1="14" y1="8" x2="14" y2="8"/><line x1="18" y1="8" x2="18" y2="8"/>
+            <line x1="6" y1="12" x2="6" y2="12"/><line x1="10" y1="12" x2="10" y2="12"/><line x1="14" y1="12" x2="14" y2="12"/><line x1="18" y1="12" x2="18" y2="12"/>
+            <line x1="7" y1="16" x2="17" y2="16"/>
+          </svg>
+        </button>
+
         <!-- Hide/Show HUD Toggle -->
         <button id="hudToggleBtn" class="icon-btn" title="Toggle HUD Display [U]">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -176,7 +186,7 @@
         </div>
 
         <!-- Speedometer -->
-        <div class="glass-card gauge-card">
+        <div class="glass-card gauge-card speed-card">
           <div class="gauge-header">
             <span>Speed Log</span>
             <span class="gauge-unit">KTS</span>
@@ -195,42 +205,46 @@
           <div class="compass-ring">
             <div id="compassRose" class="compass-needle"></div>
           </div>
-          <div>
+          <div class="compass-meta">
             <div class="gauge-header">
               <span>Heading</span>
             </div>
             <div class="gauge-body">
-              <span id="compassDegree" class="gauge-value" style="font-size: 26px;">0°</span>
+              <span id="compassDegree" class="gauge-value">0°</span>
               <span id="compassVal" class="gauge-unit">N</span>
             </div>
           </div>
         </div>
 
         <!-- Throttle & Rudder Indicator -->
-        <div class="glass-card gauge-card" style="min-width: 150px;">
-          <div class="gauge-header">
-            <span>Throttle</span>
-            <span id="throttleVal" class="gauge-unit">0%</span>
-          </div>
-          <div class="gauge-bar-track">
-            <div id="throttleBar" class="gauge-bar-fill" style="width: 0%;"></div>
+        <div class="glass-card helm-card">
+          <div class="helm-row">
+            <div class="gauge-header">
+              <span>Throttle</span>
+              <span id="throttleVal" class="gauge-unit">0%</span>
+            </div>
+            <div class="gauge-bar-track">
+              <div id="throttleBar" class="gauge-bar-fill" style="width: 0%;"></div>
+            </div>
           </div>
 
-          <div class="gauge-header" style="margin-top: 14px;">
-            <span>Rudder</span>
-            <span id="rudderVal" class="gauge-unit">0° MID</span>
-          </div>
-          <div class="rudder-track">
-            <div id="rudderIndicator" class="rudder-pip"></div>
+          <div class="helm-row">
+            <div class="gauge-header">
+              <span>Rudder</span>
+              <span id="rudderVal" class="gauge-unit">0° MID</span>
+            </div>
+            <div class="rudder-track">
+              <div id="rudderIndicator" class="rudder-pip"></div>
+            </div>
           </div>
         </div>
 
         <!-- Sea State Telemetry -->
         <div class="glass-card sea-state-card">
-          <div class="gauge-header" style="margin-bottom: 8px;">
+          <div class="gauge-header">
             <span>Sea State & Attitude</span>
           </div>
-          <div class="sea-stat-grid" style="grid-template-columns: repeat(3, 1fr); min-width: 190px;">
+          <div class="sea-stat-grid">
             <div class="stat-item">
               <div class="label">Depth</div>
               <div id="depthVal" class="val" style="color: #00e5ff;">58.4 m</div>
@@ -261,15 +275,121 @@
     </footer>
   </div>
 
-  <!-- Keyboard Controls Cheatsheet Hint -->
-  <div class="controls-hint">
-    <span><span class="key-badge">W</span><span class="key-badge">S</span> Throttle</span>
-    <span><span class="key-badge">A</span><span class="key-badge">D</span> Rudder</span>
-    <span><span class="key-badge">Q</span><span class="key-badge">E</span> Thrusters</span>
-    <span><span class="key-badge">C</span> Autopilot</span>
-    <span><span class="key-badge">L</span> Lights</span>
-    <span><span class="key-badge">H</span> Horn</span>
-    <span><span class="key-badge">1-5</span> Cameras</span>
+  <!-- Keyboard Controls Modal Dialog -->
+  <div id="controlsModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="controlsModalTitle">
+    <div class="glass-card controls-modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="modal-icon">
+            <rect x="2" y="4" width="20" height="16" rx="2" ry="2"/>
+            <line x1="6" y1="8" x2="6" y2="8"/><line x1="10" y1="8" x2="10" y2="8"/><line x1="14" y1="8" x2="14" y2="8"/><line x1="18" y1="8" x2="18" y2="8"/>
+            <line x1="6" y1="12" x2="6" y2="12"/><line x1="10" y1="12" x2="10" y2="12"/><line x1="14" y1="12" x2="14" y2="12"/><line x1="18" y1="12" x2="18" y2="12"/>
+            <line x1="7" y1="16" x2="17" y2="16"/>
+          </svg>
+          <div>
+            <h2 id="controlsModalTitle" class="modal-title">HELM & NAVIGATION CONTROLS</h2>
+            <div class="modal-subtitle">Direct keyboard mapping & vessel hotkeys</div>
+          </div>
+        </div>
+        <button id="closeControlsBtn" class="modal-close-btn" aria-label="Close Controls">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="modal-grid">
+        <!-- Section 1: Propulsion & Steering -->
+        <div class="control-section">
+          <div class="section-title">
+            <span class="section-badge">01</span> Propulsion & Rudder
+          </div>
+          <div class="key-row">
+            <div class="key-combo"><span class="key-badge">W</span> <span class="key-badge">S</span></div>
+            <span class="key-desc">Throttle Ahead / Astern</span>
+          </div>
+          <div class="key-row">
+            <div class="key-combo"><span class="key-badge">A</span> <span class="key-badge">D</span></div>
+            <span class="key-desc">Rudder Port / Starboard</span>
+          </div>
+          <div class="key-row">
+            <div class="key-combo"><span class="key-badge">Q</span> <span class="key-badge">E</span></div>
+            <span class="key-desc">Electric Bow Thrusters</span>
+          </div>
+          <div class="key-row">
+            <div class="key-combo"><span class="key-badge">C</span></div>
+            <span class="key-desc">Autopilot Cruise Navigation</span>
+          </div>
+        </div>
+
+        <!-- Section 2: Cameras & Perspectives -->
+        <div class="control-section">
+          <div class="section-title">
+            <span class="section-badge">02</span> Cameras & Views
+          </div>
+          <div class="key-row">
+            <div class="key-combo"><span class="key-badge">1</span></div>
+            <span class="key-desc">Chase View (Stern Follow)</span>
+          </div>
+          <div class="key-row">
+            <div class="key-combo"><span class="key-badge">2</span></div>
+            <span class="key-desc">Bridge Helm (1st Person)</span>
+          </div>
+          <div class="key-row">
+            <div class="key-combo"><span class="key-badge">3</span></div>
+            <span class="key-desc">Drone Orbit (360° Cam)</span>
+          </div>
+          <div class="key-row">
+            <div class="key-combo"><span class="key-badge">4</span></div>
+            <span class="key-desc">Bow Spray (Stem Crest)</span>
+          </div>
+          <div class="key-row">
+            <div class="key-combo"><span class="key-badge">5</span></div>
+            <span class="key-desc">Keel Depth (Subsea Sonar)</span>
+          </div>
+          <div class="key-row">
+            <div class="key-combo"><span class="key-badge">Drag</span> <span class="key-badge">Scroll</span></div>
+            <span class="key-desc">Orbit Perspective & Zoom</span>
+          </div>
+        </div>
+
+        <!-- Section 3: Vessel Systems & Tools -->
+        <div class="control-section">
+          <div class="section-title">
+            <span class="section-badge">03</span> Vessel Systems & HUD
+          </div>
+          <div class="key-row">
+            <div class="key-combo"><span class="key-badge">L</span></div>
+            <span class="key-desc">Searchlights & Deck Glow</span>
+          </div>
+          <div class="key-row">
+            <div class="key-combo"><span class="key-badge">H</span></div>
+            <span class="key-desc">Sound High-Power Fog Horn</span>
+          </div>
+          <div class="key-row">
+            <div class="key-combo"><span class="key-badge">M</span></div>
+            <span class="key-desc">Master Audio Mute / Unmute</span>
+          </div>
+          <div class="key-row">
+            <div class="key-combo"><span class="key-badge">U</span></div>
+            <span class="key-desc">Toggle Minimalist HUD</span>
+          </div>
+          <div class="key-row">
+            <div class="key-combo"><span class="key-badge">F</span></div>
+            <span class="key-desc">Toggle Fullscreen Display</span>
+          </div>
+          <div class="key-row">
+            <div class="key-combo"><span class="key-badge">K</span> / <span class="key-badge">?</span></div>
+            <span class="key-desc">Open / Close This Guide</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <span class="hint-text">Tip: Press <kbd class="key-badge">K</kbd> or <kbd class="key-badge">ESC</kbd> anytime to toggle</span>
+        <button id="gotItBtn" class="primary-btn">Got It</button>
+      </div>
+    </div>
   </div>
 
   <!-- Mobile Touch Controls -->

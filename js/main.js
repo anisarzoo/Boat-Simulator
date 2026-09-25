@@ -202,6 +202,12 @@ class App {
         this.ui.setAudioIcon(isMuted);
         this.ui.showToast(isMuted ? 'Audio Muted' : 'Audio Enabled');
       }
+      if (e.key === 'k' || e.key === 'K' || e.key === '?') {
+        this.ui.toggleControlsModal();
+      }
+      if (e.key === 'Escape') {
+        this.ui.toggleControlsModal(false);
+      }
     });
 
     window.addEventListener('keyup', (e) => {
@@ -210,7 +216,7 @@ class App {
 
     // Mouse drag for camera orbit
     window.addEventListener('mousedown', (e) => {
-      if (e.target.closest('#hud, #touchControls')) return;
+      if (e.target.closest('#hud, #touchControls, #controlsModal')) return;
       this.isMouseDown = true;
       this.lastMouse = { x: e.clientX, y: e.clientY };
     });

@@ -37,7 +37,11 @@ export class UIController {
       weatherButtons: document.querySelectorAll('.weather-btn'),
       cameraButtons: document.querySelectorAll('.cam-btn'),
       touchControls: document.getElementById('touchControls'),
-      controlsHint: document.querySelector('.controls-hint')
+      controlsHint: document.querySelector('.controls-hint'),
+      controlsBtn: document.getElementById('controlsBtn'),
+      controlsModal: document.getElementById('controlsModal'),
+      closeControlsBtn: document.getElementById('closeControlsBtn'),
+      gotItBtn: document.getElementById('gotItBtn')
     };
 
     this.toastTimer = null;
@@ -169,7 +173,45 @@ export class UIController {
       });
     }
 
+    // 11. Keyboard Controls Modal Trigger & Handlers
+    if (this.dom.controlsBtn) {
+      this.dom.controlsBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.toggleControlsModal();
+      });
+    }
+
+    if (this.dom.closeControlsBtn) {
+      this.dom.closeControlsBtn.addEventListener('click', () => {
+        this.toggleControlsModal(false);
+      });
+    }
+
+    if (this.dom.gotItBtn) {
+      this.dom.gotItBtn.addEventListener('click', () => {
+        this.toggleControlsModal(false);
+      });
+    }
+
+    if (this.dom.controlsModal) {
+      this.dom.controlsModal.addEventListener('click', (e) => {
+        if (e.target === this.dom.controlsModal) {
+          this.toggleControlsModal(false);
+        }
+      });
+    }
+
     this.initTouchControls();
+  }
+
+  toggleControlsModal(force) {
+    if (!this.dom.controlsModal) return;
+    const isHidden = this.dom.controlsModal.classList.contains('hidden');
+    const shouldOpen = force !== undefined ? force : isHidden;
+    this.dom.controlsModal.classList.toggle('hidden', !shouldOpen);
+    if (this.dom.controlsBtn) {
+      this.dom.controlsBtn.classList.toggle('active', shouldOpen);
+    }
   }
 
   setAudioIcon(isMuted) {
