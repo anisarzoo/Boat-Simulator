@@ -36,7 +36,8 @@ export class UIController {
       fpsVal: document.getElementById('fpsVal'),
       weatherButtons: document.querySelectorAll('.weather-btn'),
       cameraButtons: document.querySelectorAll('.cam-btn'),
-      touchControls: document.getElementById('touchControls')
+      touchControls: document.getElementById('touchControls'),
+      controlsHint: document.querySelector('.controls-hint')
     };
 
     this.toastTimer = null;
@@ -150,6 +151,9 @@ export class UIController {
       this.dom.hudToggleBtn.addEventListener('click', () => {
         const isCollapsed = this.dom.bottomDashboard.classList.toggle('collapsed');
         this.dom.hudToggleBtn.classList.toggle('active', isCollapsed);
+        if (this.dom.controlsHint) {
+          this.dom.controlsHint.classList.toggle('hidden', isCollapsed);
+        }
         this.showToast(isCollapsed ? 'HUD Minimized' : 'HUD Restored');
       });
     }

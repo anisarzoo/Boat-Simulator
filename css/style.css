@@ -531,15 +531,30 @@ html, body {
 /* ================= CONTROLS INFO CHEATSHEET ================= */
 .controls-hint {
   position: fixed;
-  bottom: 20px;
+  bottom: 118px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
-  gap: 14px;
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.45);
+  align-items: center;
+  gap: 16px;
+  padding: 7px 20px;
+  background: rgba(8, 16, 28, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 24px;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45), 0 0 16px rgba(0, 229, 255, 0.08);
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.75);
   letter-spacing: 0.04em;
   pointer-events: none;
+  z-index: 15;
+  transition: opacity 0.35s ease, transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.controls-hint.hidden {
+  opacity: 0;
+  transform: translateX(-50%) translateY(24px);
 }
 
 .key-badge {
