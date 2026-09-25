@@ -39,7 +39,7 @@ class App {
       55,
       window.innerWidth / window.innerHeight,
       0.5,
-      2000
+      3000
     );
 
     this.renderer = new THREE.WebGLRenderer({
@@ -48,6 +48,7 @@ class App {
     });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setClearColor(0x1a2634, 1.0);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.15;
     this.renderer.shadowMap.enabled = true;
