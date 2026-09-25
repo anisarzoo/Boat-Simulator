@@ -278,13 +278,15 @@ class App {
       this.camera.lookAt(lookTarget);
 
     } else if (this.camMode === 'bridge') {
-      // First-person view from inside the wheelhouse
+      // First-person view from inside the wheelhouse overlooking glowing helm console
       const bridgePos = shipPos.clone()
-        .add(up.clone().multiplyScalar(3.8))
-        .add(forward.clone().multiplyScalar(1.2));
+        .add(up.clone().multiplyScalar(3.56))
+        .add(forward.clone().multiplyScalar(1.15));
 
       this.camera.position.copy(bridgePos);
-      const bridgeLook = bridgePos.clone().add(forward.clone().multiplyScalar(60.0));
+      const bridgeLook = bridgePos.clone()
+        .add(forward.clone().multiplyScalar(45.0))
+        .add(up.clone().multiplyScalar(-2.2));
       this.camera.lookAt(bridgeLook);
 
     } else if (this.camMode === 'orbit') {
