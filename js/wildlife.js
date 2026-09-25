@@ -13,109 +13,213 @@ export class MarineWildlife {
     this.initSpoutParticles();
   }
 
-  // ── 1. PROCEDURAL DOLPHIN MODEL ──
+  // ── 1. HIGH-DETAIL ANATOMICAL PROCEDURAL DOLPHIN MODEL ──
   createDolphinModel() {
     const group = new THREE.Group();
 
-    const matBack = new THREE.MeshStandardMaterial({
-      color: 0x2e3b48, // Oceanic slate grey
-      roughness: 0.25,
+    // Materials
+    const matDorsal = new THREE.MeshStandardMaterial({
+      color: 0x1e2c3a, // Deep slate ocean navy
+      roughness: 0.2,
       metalness: 0.15
     });
 
-    const matBelly = new THREE.MeshStandardMaterial({
-      color: 0xe8ecf2, // Cream white underbelly
-      roughness: 0.35,
-      metalness: 0.05
+    const matEye = new THREE.MeshStandardMaterial({
+      color: 0x0c0f14,
+      roughness: 0.1,
+      metalness: 0.7
     });
 
-    // Torso (Streamlined spindle)
-    const torsoGeo = new THREE.CylinderGeometry(0.24, 0.38, 2.2, 10);
-    torsoGeo.rotateX(-Math.PI / 2);
-    const torso = new THREE.Mesh(torsoGeo, matBack);
-    torso.position.set(0, 0, 0);
-    group.add(torso);
+    const matEyeGlint = new THREE.MeshBasicMaterial({ color: 0xffffff });
 
-    // White belly underside patch
-    const bellyGeo = new THREE.CylinderGeometry(0.22, 0.36, 2.15, 8, 1, false, 0, Math.PI);
-    bellyGeo.rotateX(-Math.PI / 2);
-    bellyGeo.rotateZ(Math.PI);
-    const belly = new THREE.Mesh(bellyGeo, matBelly);
-    belly.position.set(0, -0.04, 0);
-    group.add(belly);
+    // 1. Smooth contoured fusiform body using multi-ring loft
+    const rings = [
+      { z:  1.38, rx: 0.045, ry: 0.035, y: -0.05 }, // Beak tip
+      { z:  1.18, rx: 0.095, ry: 0.075, y: -0.04 }, // Beak base
+      { z:  0.88, rx: 0.23,  ry: 0.26,  y:  0.06 }, // Melon forehead
+      { z:  0.50, rx: 0.33,  ry: 0.36,  y:  0.03 }, // Thoracic cranial
+      { z:  0.08, rx: 0.36,  ry: 0.38,  y:  0.00 }, // Mid torso
+      { z: -0.38, rx: 0.32,  ry: 0.35,  y: -0.02 }, // Dorsal base
+      { z: -0.85, rx: 0.23,  ry: 0.28,  y: -0.03 }  // Lumbar trunk
+    ];
 
-    // Melon forehead & curved rostrum beak
-    const headGeo = new THREE.SphereGeometry(0.32, 8, 8);
-    headGeo.scale(0.85, 0.95, 1.35);
-    const head = new THREE.Mesh(headGeo, matBack);
-    head.position.set(0, 0.04, 1.25);
-    group.add(head);
+    const radialSegs = 22;
+    const numRings = rings.length;
+    const bodyGeo = new THREE.BufferGeometry();
+    const positions = [];
+    const normals = [];
+    const colors = [];
 
-    const beakGeo = new THREE.ConeGeometry(0.12, 0.55, 6);
-    beakGeo.rotateX(-Math.PI / 2);
-    const beak = new THREE.Mesh(beakGeo, matBack);
-    beak.position.set(0, -0.05, 1.95);
-    group.add(beak);
+    for (let r = 0; r < numRings; r++) {
+      const ring = rings[r];
+      for (let s = 0; s <= radialSegs; s++) {
+        const theta = (s / radialSegs) * Math.PI * 2;
+        const cosT = Math.cos(theta);
+        const sinT = Math.sin(theta);
 
-    // Falcate dorsal fin
-    const dorsalGeo = new THREE.BufferGeometry();
-    const dorsalVerts = new Float32Array([
-       0.02, 0.35,  0.2,
-      -0.02, 0.35,  0.2,
-       0.02, 0.35, -0.25,
-      -0.02, 0.35, -0.25,
-       0.00, 0.88, -0.15
-    ]);
-    dorsalGeo.setAttribute('position', new THREE.BufferAttribute(dorsalVerts, 3));
-    dorsalGeo.setIndex([0, 2, 4, 1, 4, 3, 0, 4, 1, 2, 3, 4]);
-    dorsalGeo.computeVertexNormals();
-    const dorsal = new THREE.Mesh(dorsalGeo, matBack);
-    group.add(dorsal);
+        const px = cosT * ring.rx;
+        const py = ring.y + sinT * ring.ry;
+        const pz = ring.z;
 
-    // Pectoral flippers (Port & Starboard)
-    for (const sx of [-0.34, 0.34]) {
-      const flipperGeo = new THREE.BufferGeometry();
-      const flipperVerts = new Float32Array([
-        0, 0, 0.2,
-        0, 0, -0.2,
-        sx * 1.5, -0.25, -0.15
-      ]);
-      flipperGeo.setAttribute('position', new THREE.BufferAttribute(flipperVerts, 3));
-      flipperGeo.setIndex([0, 1, 2, 0, 2, 1]);
-      flipperGeo.computeVertexNormals();
-      const flipper = new THREE.Mesh(flipperGeo, matBack);
-      flipper.position.set(sx * 0.95, -0.12, 0.65);
-      group.add(flipper);
+        positions.push(px, py, pz);
+        normals.push(cosT, sinT, 0.15);
+
+        // Counter-shaded vertex coloring:
+        // sinT = 1 (dorsal), sinT = -1 (belly)
+        const t = (sinT + 1) * 0.5;
+        if (t > 0.58) {
+          // Deep slate ocean navy cape
+          colors.push(0.12, 0.17, 0.23);
+        } else if (t > 0.34) {
+          // Soft blue-grey flank stripe
+          colors.push(0.32, 0.40, 0.48);
+        } else {
+          // Clean pearl white underbelly
+          colors.push(0.92, 0.95, 0.98);
+        }
+      }
     }
 
-    // Articulated tail stock & horizontal flukes
-    const tailStock = new THREE.Group();
-    tailStock.position.set(0, 0, -1.1);
+    const indices = [];
+    for (let r = 0; r < numRings - 1; r++) {
+      for (let s = 0; s < radialSegs; s++) {
+        const a = r * (radialSegs + 1) + s;
+        const b = (r + 1) * (radialSegs + 1) + s;
+        const c = (r + 1) * (radialSegs + 1) + (s + 1);
+        const d = r * (radialSegs + 1) + (s + 1);
+        indices.push(a, b, d);
+        indices.push(b, c, d);
+      }
+    }
 
-    const peduncleGeo = new THREE.ConeGeometry(0.18, 1.1, 7);
-    peduncleGeo.rotateX(Math.PI / 2);
-    const peduncle = new THREE.Mesh(peduncleGeo, matBack);
-    peduncle.position.set(0, 0, -0.55);
-    tailStock.add(peduncle);
+    bodyGeo.setIndex(indices);
+    bodyGeo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    bodyGeo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+    bodyGeo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    bodyGeo.computeVertexNormals();
 
-    const flukeGeo = new THREE.BufferGeometry();
-    const flukeVerts = new Float32Array([
-       0.0,  0.0, -1.05,
-      -0.55, 0.0, -1.35,
-       0.55, 0.0, -1.35,
-       0.0,  0.0, -1.25
-    ]);
-    flukeGeo.setAttribute('position', new THREE.BufferAttribute(flukeVerts, 3));
-    flukeGeo.setIndex([0, 1, 3, 0, 3, 2, 1, 0, 3, 2, 0, 3]);
-    flukeGeo.computeVertexNormals();
-    const flukes = new THREE.Mesh(flukeGeo, matBack);
-    tailStock.add(flukes);
+    const bodyMat = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.22,
+      metalness: 0.12
+    });
+    const bodyMesh = new THREE.Mesh(bodyGeo, bodyMat);
+    bodyMesh.castShadow = true;
+    group.add(bodyMesh);
 
-    group.add(tailStock);
+    // 2. Realistic curved Falcate Dorsal Fin with airfoil thickness
+    const dorsalFin = new THREE.Group();
+    dorsalFin.position.set(0, 0.34, -0.32);
+    const finShape = new THREE.Shape();
+    finShape.moveTo(0, 0);
+    finShape.bezierCurveTo(-0.02, 0.18, -0.06, 0.38, -0.16, 0.52);
+    finShape.bezierCurveTo(-0.14, 0.44, -0.08, 0.28, -0.32, 0.0);
+    finShape.closePath();
+
+    const finGeo = new THREE.ExtrudeGeometry(finShape, {
+      depth: 0.038,
+      bevelEnabled: true,
+      bevelSegments: 2,
+      steps: 1,
+      bevelSize: 0.014,
+      bevelThickness: 0.012
+    });
+    finGeo.rotateY(Math.PI / 2);
+    finGeo.translate(0.019, 0, 0);
+    const finMesh = new THREE.Mesh(finGeo, matDorsal);
+    dorsalFin.add(finMesh);
+    group.add(dorsalFin);
+
+    // 3. Anatomical Hydrofoil Pectoral Flippers (Port & Starboard)
+    for (const side of [-1, 1]) {
+      const flipGroup = new THREE.Group();
+      flipGroup.position.set(side * 0.31, -0.08, 0.52);
+      flipGroup.rotation.set(0.18, side * 0.35, side * -0.55);
+
+      const flipShape = new THREE.Shape();
+      flipShape.moveTo(0, 0);
+      flipShape.bezierCurveTo(side * 0.22, -0.08, side * 0.48, -0.22, side * 0.62, -0.38);
+      flipShape.bezierCurveTo(side * 0.46, -0.32, side * 0.26, -0.24, 0, -0.16);
+      flipShape.closePath();
+
+      const flipGeo = new THREE.ExtrudeGeometry(flipShape, {
+        depth: 0.026,
+        bevelEnabled: true,
+        bevelSegments: 2,
+        steps: 1,
+        bevelSize: 0.01,
+        bevelThickness: 0.008
+      });
+      const flipMesh = new THREE.Mesh(flipGeo, matDorsal);
+      flipGroup.add(flipMesh);
+      group.add(flipGroup);
+    }
+
+    // 4. Expressive Eyes with Gloss Highlights
+    for (const side of [-1, 1]) {
+      const eyeMesh = new THREE.Mesh(
+        new THREE.SphereGeometry(0.026, 8, 8),
+        matEye
+      );
+      eyeMesh.position.set(side * 0.225, 0.045, 0.96);
+      group.add(eyeMesh);
+
+      const glint = new THREE.Mesh(
+        new THREE.SphereGeometry(0.008, 4, 4),
+        matEyeGlint
+      );
+      glint.position.set(side * 0.24, 0.055, 0.975);
+      group.add(glint);
+    }
+
+    // 5. Blowhole on dorsal cranium
+    const blowholeMesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.02, 0.025, 0.02, 6),
+      matDorsal
+    );
+    blowholeMesh.position.set(0, 0.31, 0.72);
+    group.add(blowholeMesh);
+
+    // 6. Two-Segment Articulated Tail Stock (Peduncle) & Horizontal Flukes
+    const peduncleGroup = new THREE.Group();
+    peduncleGroup.position.set(0, -0.03, -0.85);
+
+    const pedGeo = new THREE.CylinderGeometry(0.065, 0.22, 0.85, 14);
+    pedGeo.rotateX(-Math.PI / 2);
+    pedGeo.scale(1.0, 1.35, 1.0);
+    pedGeo.translate(0, 0, -0.42);
+    const pedMesh = new THREE.Mesh(pedGeo, matDorsal);
+    peduncleGroup.add(pedMesh);
+
+    // Wide Crescent Horizontal Flukes with central notch
+    const flukeShape = new THREE.Shape();
+    flukeShape.moveTo(0, -0.02);
+    flukeShape.bezierCurveTo(-0.18, 0.08, -0.38, 0.12, -0.52, 0.02);
+    flukeShape.bezierCurveTo(-0.42, -0.12, -0.18, -0.18, -0.04, -0.16);
+    flukeShape.lineTo(0, -0.11);
+    flukeShape.lineTo(0.04, -0.16);
+    flukeShape.bezierCurveTo(0.18, -0.18, 0.42, -0.12, 0.52, 0.02);
+    flukeShape.bezierCurveTo(0.38, 0.12, 0.18, 0.08, 0, -0.02);
+    flukeShape.closePath();
+
+    const flukeGeo = new THREE.ExtrudeGeometry(flukeShape, {
+      depth: 0.024,
+      bevelEnabled: true,
+      bevelSegments: 2,
+      steps: 1,
+      bevelSize: 0.008,
+      bevelThickness: 0.008
+    });
+    flukeGeo.rotateX(Math.PI / 2);
+    flukeGeo.translate(0, 0.012, -0.85);
+    const flukeMesh = new THREE.Mesh(flukeGeo, matDorsal);
+    peduncleGroup.add(flukeMesh);
+
+    group.add(peduncleGroup);
 
     return {
       group,
-      tailStock
+      tailStock: peduncleGroup
     };
   }
 
@@ -364,12 +468,7 @@ export class MarineWildlife {
     const isSailing = shipSpeedKnots > 3.0;
 
     for (const d of this.dolphins) {
-      d.phase += dt * (isSailing ? 4.5 : 1.8);
-
-      // Bow pressure wave target position
-      const bowTarget = shipPosition.clone()
-        .addScaledVector(shipForward, d.offsetForward)
-        .addScaledVector(shipRight, d.offsetLateral + Math.sin(time * 1.2 + d.id) * 1.2);
+      d.phase += dt * (isSailing ? 4.8 : 2.2);
 
       d.jumpTimer -= dt;
 
@@ -377,39 +476,63 @@ export class MarineWildlife {
         // Trigger graceful breach jump!
         d.isJumping = true;
         d.jumpProgress = 0;
-        d.jumpDuration = 1.6 + Math.random() * 0.6;
+        d.jumpDuration = 1.5 + Math.random() * 0.5;
       }
 
       if (d.isJumping) {
         d.jumpProgress += dt / d.jumpDuration;
         const jp = d.jumpProgress;
 
-        // Parabolic ballistic trajectory out of water and back
-        const jumpY = Math.sin(jp * Math.PI) * 2.6 - 0.4;
-        d.pos.x = THREE.MathUtils.lerp(d.pos.x, bowTarget.x, 0.12);
-        d.pos.z = THREE.MathUtils.lerp(d.pos.z, bowTarget.z, 0.12);
+        // Bow pressure wave target position
+        const bowTarget = shipPosition.clone()
+          .addScaledVector(shipForward, d.offsetForward)
+          .addScaledVector(shipRight, d.offsetLateral);
+
+        // Parabolic trajectory out of water and back
+        const jumpY = Math.sin(jp * Math.PI) * 2.8 - 0.75;
+        d.pos.x = THREE.MathUtils.lerp(d.pos.x, bowTarget.x, 0.14);
+        d.pos.z = THREE.MathUtils.lerp(d.pos.z, bowTarget.z, 0.14);
         d.pos.y = jumpY;
 
-        // Dynamic pitch arch: head up on ascent, head down on re-entry
-        const jumpPitch = (jp - 0.5) * 1.5;
-        d.group.rotation.set(jumpPitch, Math.atan2(shipForward.x, shipForward.z), (d.id % 2 === 0 ? -0.25 : 0.25));
+        // Dynamic pitch arch: head up on ascent (+0.6 rad), head down on dive (-0.75 rad)
+        const jumpPitch = (0.5 - jp) * 1.5;
+        const shipYaw = Math.atan2(shipForward.x, shipForward.z);
+        d.group.rotation.set(jumpPitch, shipYaw, (d.id % 2 === 0 ? -0.22 : 0.22));
 
         if (d.jumpProgress >= 1.0) {
           d.isJumping = false;
-          d.jumpTimer = 5.0 + Math.random() * 8.0;
+          d.jumpTimer = 6.0 + Math.random() * 8.0;
         }
-      } else {
-        // Swimming submerged just below surface riding the bow wave
-        const swimY = -0.55 + Math.sin(d.phase) * 0.35;
-        d.pos.lerp(new THREE.Vector3(bowTarget.x, swimY, bowTarget.z), Math.min(1.0, 4.5 * dt));
+      } else if (isSailing) {
+        // Swimming submerged just below surface riding the bow pressure wave (0.8m to 1.4m depth)
+        const bowTarget = shipPosition.clone()
+          .addScaledVector(shipForward, d.offsetForward)
+          .addScaledVector(shipRight, d.offsetLateral + Math.sin(time * 1.2 + d.id) * 1.0);
 
-        // Spine undulation
-        const undulationPitch = Math.cos(d.phase) * 0.28;
-        d.group.rotation.set(undulationPitch, Math.atan2(shipForward.x, shipForward.z), Math.sin(d.phase * 0.5) * 0.15);
+        const swimY = -1.15 + Math.sin(d.phase) * 0.28;
+        d.pos.lerp(new THREE.Vector3(bowTarget.x, swimY, bowTarget.z), Math.min(1.0, 5.0 * dt));
+
+        // Subtle spine undulation
+        const undulationPitch = Math.cos(d.phase) * 0.22;
+        const shipYaw = Math.atan2(shipForward.x, shipForward.z);
+        d.group.rotation.set(undulationPitch, shipYaw, Math.sin(d.phase * 0.5) * 0.12);
+      } else {
+        // Idle state: Playfully circle around stationary / drifting vessel
+        const circleAngle = time * 0.35 + (d.id * Math.PI * 0.5);
+        const radius = 16.0 + (d.id % 2) * 5.0;
+        const targetX = shipPosition.x + Math.sin(circleAngle) * radius;
+        const targetZ = shipPosition.z + Math.cos(circleAngle) * radius;
+        const swimY = -1.25 + Math.sin(d.phase) * 0.35;
+
+        d.pos.lerp(new THREE.Vector3(targetX, swimY, targetZ), Math.min(1.0, 3.5 * dt));
+
+        // Facing tangent of orbit circle
+        const tangentYaw = circleAngle + Math.PI / 2;
+        d.group.rotation.set(Math.cos(d.phase) * 0.18, tangentYaw, 0.15);
       }
 
-      // Tail flukes propulsion stroke
-      d.tailStock.rotation.x = Math.sin(d.phase * 1.8) * 0.45;
+      // Propulsive tail flukes stroke
+      d.tailStock.rotation.x = Math.sin(d.phase * 1.9) * 0.45;
       d.group.position.copy(d.pos);
     }
 

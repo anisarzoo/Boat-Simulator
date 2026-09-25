@@ -287,9 +287,9 @@ export class SeagullFlock {
 
         // Role-specific flight parameters
         // Wake follower parameters
-        wakeDist: 14 + Math.random() * 32, // distance behind stern
-        wakeWidth: 6 + Math.random() * 18,
-        wakeHeight: 4.5 + Math.random() * 11,
+        wakeDist: 18 + Math.random() * 32, // distance behind stern
+        wakeWidth: 8 + Math.random() * 20,
+        wakeHeight: 9.0 + Math.random() * 12.0, // Majestic high soaring altitude above mast
         wakeCycleSpeed: 0.35 + Math.random() * 0.3,
         wakePhaseOffset: (i * 1.25) + Math.random(),
 

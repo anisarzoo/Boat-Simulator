@@ -9,60 +9,88 @@ export class MarineTraffic {
     this.initVessels();
   }
 
-  // ── 1. PROCEDURAL CONTAINER CARGO SHIP (110m LOA) ──
+    // ── 1. PROCEDURAL CONTAINER CARGO SHIP (110m LOA) ──
   createContainerShip() {
     const group = new THREE.Group();
 
     const matHull = new THREE.MeshStandardMaterial({
-      color: 0x181c22, // Dark commercial cargo hull
-      roughness: 0.6,
-      metalness: 0.2
+      color: 0x161a20, // Dark commercial cargo hull
+      roughness: 0.55,
+      metalness: 0.25
     });
     const matSuperstructure = new THREE.MeshStandardMaterial({
-      color: 0xeeeeee,
-      roughness: 0.4
+      color: 0xf0f2f5,
+      roughness: 0.35
+    });
+    const matBridgeGlass = new THREE.MeshStandardMaterial({
+      color: 0x0a1c28,
+      roughness: 0.08,
+      metalness: 0.9
     });
     const matRedPrimer = new THREE.MeshStandardMaterial({
       color: 0x8a1c14,
-      roughness: 0.5
+      roughness: 0.6
+    });
+    const matBootStripe = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 0.4
+    });
+    const matCraneYellow = new THREE.MeshStandardMaterial({
+      color: 0xf5a623,
+      roughness: 0.4
     });
 
-    // Hull (110m x 18m x 12m)
+    // Hull topsides (110m x 18m x 9m) - properly immersed at laden draft
     const hullBase = new THREE.Mesh(new THREE.BoxGeometry(18, 9, 105), matHull);
-    hullBase.position.set(0, 4.5, 0);
+    hullBase.position.set(0, 1.5, 0);
     group.add(hullBase);
 
-    // Red underwater keel & bulbous bow
-    const keel = new THREE.Mesh(new THREE.BoxGeometry(17.8, 3.5, 102), matRedPrimer);
-    keel.position.set(0, -1.5, 0);
+    // White waterline boot-topping stripe
+    const bootStripe = new THREE.Mesh(new THREE.BoxGeometry(18.15, 0.45, 104), matBootStripe);
+    bootStripe.position.set(0, 0.2, 0);
+    group.add(bootStripe);
+
+    // Red underwater keel & bulbous bow (deeply submerged at y = -4.5m)
+    const keel = new THREE.Mesh(new THREE.BoxGeometry(17.8, 5.5, 102), matRedPrimer);
+    keel.position.set(0, -4.5, 0);
     group.add(keel);
 
     const bulbousBow = new THREE.Mesh(new THREE.SphereGeometry(3.5, 8, 8), matRedPrimer);
     bulbousBow.scale.set(1.0, 1.2, 2.2);
-    bulbousBow.position.set(0, -1.2, 54);
+    bulbousBow.position.set(0, -4.2, 54);
     group.add(bulbousBow);
 
-    // Raked bow forecastle
+    // Raked bow forecastle with marine sheer
     const bowWedge = new THREE.Mesh(new THREE.ConeGeometry(9.0, 18.0, 4), matHull);
     bowWedge.rotation.y = Math.PI / 4;
     bowWedge.rotation.x = -Math.PI / 2;
-    bowWedge.position.set(0, 5.2, 52);
+    bowWedge.position.set(0, 2.2, 52);
     group.add(bowWedge);
 
     // Multi-colored container stacks
-    const containerColors = [0x1976d2, 0xd32f2f, 0x388e3c, 0xf57c00, 0x455a64, 0x5d4037];
-    const containerMats = containerColors.map(c => new THREE.MeshStandardMaterial({ color: c, roughness: 0.7 }));
+    const containerColors = [0x1976d2, 0xd32f2f, 0x2e7d32, 0xf57c00, 0x37474f, 0x4e342e];
+    const containerMats = containerColors.map(c => new THREE.MeshStandardMaterial({ color: c, roughness: 0.65 }));
 
     for (let bay = -28; bay <= 32; bay += 13) {
+      // Deck gantry crane between bays
+      if (bay === -2 || bay === 24) {
+        const craneTower = new THREE.Mesh(new THREE.BoxGeometry(1.6, 9.5, 1.6), matCraneYellow);
+        craneTower.position.set(0, 10.5, bay - 6.5);
+        const craneArm = new THREE.Mesh(new THREE.BoxGeometry(19.0, 1.0, 1.2), matCraneYellow);
+        craneArm.position.set(0, 15.0, bay - 6.5);
+        group.add(craneTower);
+        group.add(craneArm);
+      }
+
       for (const rx of [-5.5, 0, 5.5]) {
-        const tiers = 3 + Math.floor(Math.random() * 3);
+        const tiers = 3 + Math.floor(Math.random() * 2);
         for (let t = 0; t < tiers; t++) {
           const cMat = containerMats[Math.floor(Math.random() * containerMats.length)];
           const container = new THREE.Mesh(
             new THREE.BoxGeometry(5.0, 2.8, 12.0),
             cMat
           );
-          container.position.set(rx, 9.0 + t * 2.8 + 1.4, bay);
+          container.position.set(rx, 6.0 + t * 2.8 + 1.4, bay);
           container.castShadow = true;
           group.add(container);
         }
@@ -71,26 +99,31 @@ export class MarineTraffic {
 
     // Aft Bridge Superstructure (Deckhouse)
     const deckhouse = new THREE.Mesh(new THREE.BoxGeometry(16, 14, 16), matSuperstructure);
-    deckhouse.position.set(0, 15.5, -38);
+    deckhouse.position.set(0, 12.5, -38);
     deckhouse.castShadow = true;
     group.add(deckhouse);
 
+    // Panoramic navigation bridge windows
+    const bridgeWindows = new THREE.Mesh(new THREE.BoxGeometry(16.3, 1.6, 4.2), matBridgeGlass);
+    bridgeWindows.position.set(0, 18.2, -31);
+    group.add(bridgeWindows);
+
     // Bridge wings
-    const bridgeWings = new THREE.Mesh(new THREE.BoxGeometry(22, 2.5, 4), matSuperstructure);
-    bridgeWings.position.set(0, 21.5, -38);
+    const bridgeWings = new THREE.Mesh(new THREE.BoxGeometry(22, 2.2, 4), matSuperstructure);
+    bridgeWings.position.set(0, 18.5, -38);
     group.add(bridgeWings);
 
     // Exhaust Funnel (Smokestack)
     const funnel = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.6, 10, 8), matRedPrimer);
-    funnel.position.set(0, 23, -46);
+    funnel.position.set(0, 20.0, -46);
     group.add(funnel);
 
     // Main Radar Mast
     const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.4, 16, 6), matHull);
-    mast.position.set(0, 28, -38);
+    mast.position.set(0, 25.0, -38);
     group.add(mast);
 
-    // COLREGs Commercial Navigation Lights (>50m: Dual Masthead White, Port Red, Stbd Green, Stern White)
+    // COLREGs Commercial Navigation Lights
     const addNavLight = (pos, colorHex, intensity = 4.0) => {
       const dot = new THREE.Mesh(
         new THREE.SphereGeometry(0.35, 6, 6),
@@ -100,11 +133,11 @@ export class MarineTraffic {
       group.add(dot);
     };
 
-    addNavLight(new THREE.Vector3(-11.1, 21.5, -38), 0xff0000); // Port Red
-    addNavLight(new THREE.Vector3(11.1, 21.5, -38), 0x00ff33);  // Starboard Green
-    addNavLight(new THREE.Vector3(0, 32.0, -38), 0xffffff);     // Forward Masthead White
-    addNavLight(new THREE.Vector3(0, 35.5, -46), 0xffffff);     // Aft Masthead White (higher than fwd)
-    addNavLight(new THREE.Vector3(0, 8.5, -52.6), 0xffffff);    // Stern White
+    addNavLight(new THREE.Vector3(-11.1, 18.5, -38), 0xff0000); // Port Red
+    addNavLight(new THREE.Vector3(11.1, 18.5, -38), 0x00ff33);  // Starboard Green
+    addNavLight(new THREE.Vector3(0, 29.0, -38), 0xffffff);     // Forward Masthead White
+    addNavLight(new THREE.Vector3(0, 32.5, -46), 0xffffff);     // Aft Masthead White
+    addNavLight(new THREE.Vector3(0, 5.5, -52.6), 0xffffff);    // Stern White
 
     return group;
   }

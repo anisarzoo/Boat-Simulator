@@ -207,43 +207,100 @@ export class Archipelago {
     group.add(rod);
 
     // Glowing Fresnel Lantern Core
+    // Glowing Fresnel Lantern Lens Core
     const fresnelCore = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.8, 0.8, 1.6, 8),
-      new THREE.MeshBasicMaterial({ color: 0xfff3d1 })
+      new THREE.SphereGeometry(1.2, 16, 16),
+      new THREE.MeshBasicMaterial({ color: 0xfffaea })
     );
     fresnelCore.position.y = galleryY + 2.4;
     group.add(fresnelCore);
 
-    // ── ROTATING DUAL FRESNEL LIGHT BEAMS ──
+    // Warm radiant lantern flare halo
+    const lensHalo = new THREE.Mesh(
+      new THREE.SphereGeometry(2.4, 16, 16),
+      new THREE.MeshBasicMaterial({
+        color: 0xffdd88,
+        transparent: true,
+        opacity: 0.35,
+        blending: THREE.AdditiveBlending
+      })
+    );
+    lensHalo.position.y = galleryY + 2.4;
+    group.add(lensHalo);
+
+    // Omnidirectional lantern glow light
+    const lanternPoint = new THREE.PointLight(0xffe8a0, 4.0, 80, 1.2);
+    lanternPoint.position.y = galleryY + 2.4;
+    group.add(lanternPoint);
+
+    // ── ROTATING DUAL VOLUMETRIC FRESNEL LIGHT BEAMS ──
     const beamPivot = new THREE.Group();
     beamPivot.position.set(0, galleryY + 2.4, 0);
 
+    // Custom soft volumetric beam shader (fades with distance and at grazing edges)
+    const beamShaderMat = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+      uniforms: {
+        uColor: { value: new THREE.Color(0xffeed0) },
+        uLength: { value: 260.0 }
+      },
+      vertexShader: `
+        varying vec3 vLocalPos;
+        varying vec3 vWorldNormal;
+        varying vec3 vViewDir;
+        void main() {
+          vLocalPos = position;
+          vec4 worldPos = modelMatrix * vec4(position, 1.0);
+          vWorldNormal = normalize(mat3(modelMatrix) * normal);
+          vViewDir = normalize(cameraPosition - worldPos.xyz);
+          gl_Position = projectionMatrix * viewMatrix * worldPos;
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 uColor;
+        uniform float uLength;
+        varying vec3 vLocalPos;
+        varying vec3 vWorldNormal;
+        varying vec3 vViewDir;
+        void main() {
+          // Longitudinal falloff: bright at lens, gently fading out
+          float progress = clamp(vLocalPos.y / uLength, 0.0, 1.0);
+          float distFade = pow(1.0 - progress, 2.0) * smoothstep(0.0, 0.04, progress);
+          
+          // Soft radial edge falloff (smooth gaussian-like edge instead of hard polygon line)
+          float edge = abs(dot(vWorldNormal, vViewDir));
+          float rimFade = pow(1.0 - edge, 1.6);
+          
+          float alpha = 0.085 * distFade * rimFade;
+          if (alpha < 0.001) discard;
+          gl_FragColor = vec4(uColor, alpha);
+        }
+      `
+    });
+
     for (const angle of [0, Math.PI]) {
-      // High-intensity volumetric light beam
-      const spot = new THREE.SpotLight(0xfffaea, 12.0, 950, Math.PI / 14, 0.25, 1.1);
+      // Natural maritime spotlight
+      const spot = new THREE.SpotLight(0xfff5e0, 8.0, 480, Math.PI / 18, 0.85, 1.2);
       spot.position.set(0, 0, 0);
 
       const target = new THREE.Object3D();
-      target.position.set(Math.sin(angle) * 200, -8.0, Math.cos(angle) * 200);
+      target.position.set(Math.sin(angle) * 180, -12.0, Math.cos(angle) * 180);
       beamPivot.add(target);
       spot.target = target;
       beamPivot.add(spot);
       this.lighthouseBeams.push(spot);
 
-      // Visible volumetric beam cone geometry
-      const beamConeGeo = new THREE.ConeGeometry(38, 480, 16, 1, true);
+      // Smooth volumetric light beam cone
+      const beamConeGeo = new THREE.ConeGeometry(18, 260, 32, 1, true);
       beamConeGeo.rotateX(Math.PI / 2);
-      const beamConeMat = new THREE.MeshBasicMaterial({
-        color: 0xfff6dd,
-        transparent: true,
-        opacity: 0.14,
-        side: THREE.DoubleSide,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending
-      });
-      const coneMesh = new THREE.Mesh(beamConeGeo, beamConeMat);
+      // Center cone origin at apex (lantern room)
+      beamConeGeo.translate(0, 0, 130);
+
+      const coneMesh = new THREE.Mesh(beamConeGeo, beamShaderMat);
       coneMesh.rotation.y = angle;
-      coneMesh.position.set(Math.sin(angle) * 240, -10, Math.cos(angle) * 240);
       beamPivot.add(coneMesh);
     }
 

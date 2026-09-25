@@ -140,26 +140,26 @@ export class ShipPhysics {
     const thrustForce = forward.clone().multiplyScalar(thrustMagnitude);
     totalForce.add(thrustForce);
 
-    // Rudder creates turning torque only when ship is moving through water
+    // Rudder creates turning torque only when ship is moving through water (around local UP axis)
     const forwardSpeed = this.linearVelocity.dot(forward);
     this.speedKnots = forwardSpeed * 1.94384; // m/s to knots
 
     const rudderTorqueMagnitude = -this.rudder * SHIP_CONFIG.maxRudderAngle * forwardSpeed * 4500.0;
-    totalTorque.y += rudderTorqueMagnitude;
+    totalTorque.addScaledVector(up, rudderTorqueMagnitude);
 
-    // Centrifugal rolling moment (ship heels outward during turns)
-    const heelTorque = this.rudder * forwardSpeed * 5200.0;
-    totalTorque.z += heelTorque;
+    // Centrifugal rolling moment (ship heels outward during turns around local FORWARD axis)
+    const heelTorque = this.rudder * forwardSpeed * 4200.0;
+    totalTorque.addScaledVector(forward, heelTorque);
 
-    // 3b. Electric Bow Thruster Force & Turning Moment (360° spin & crab docking)
+    // 3b. Electric Bow Thruster Force & Turning Moment (360° spin & crab docking around local UP axis)
     if (Math.abs(this.bowThruster) > 0.01) {
       const thrusterMag = this.bowThruster * 34000.0;
       totalForce.add(right.clone().multiplyScalar(thrusterMag));
       // Moment arm at bow (7.2m forward of center of gravity)
-      totalTorque.y -= thrusterMag * 7.2;
+      totalTorque.addScaledVector(up, -thrusterMag * 7.2);
     }
 
-    // 4. Hydrodynamic Resistance (Linear & Angular Drag)
+    // 4. Hydrodynamic Resistance (Linear & Angular Drag in World Space)
     // Lateral drag (ships resist sideways sliding heavily)
     const lateralSpeed = this.linearVelocity.dot(right);
     const lateralDragForce = right.clone().multiplyScalar(-lateralSpeed * SHIP_CONFIG.dragLinear * 4.5);
@@ -170,56 +170,86 @@ export class ShipPhysics {
     totalForce.add(forwardDragForce);
 
     // Vertical drag (damping heave oscillations)
-    totalForce.y -= this.linearVelocity.y * 12000.0;
+    totalForce.y -= this.linearVelocity.y * 14000.0;
 
-    // Angular damping (pitch, yaw, roll friction against water)
-    totalTorque.x -= this.angularVelocity.x * SHIP_CONFIG.dragAngular * 1.2;
-    totalTorque.y -= this.angularVelocity.y * SHIP_CONFIG.dragAngular * 1.8;
-    totalTorque.z -= this.angularVelocity.z * SHIP_CONFIG.dragAngular * 1.5;
+    // Angular damping against water in world coordinates
+    totalTorque.addScaledVector(this.angularVelocity, -SHIP_CONFIG.dragAngular * 3.2);
 
-    // Hydrostatic Righting Torque (prevents capsizing and keeps ship upright)
-    const euler = new THREE.Euler().setFromQuaternion(this.quaternion, 'YXZ');
-    totalTorque.z -= euler.z * SHIP_CONFIG.rightingTorque; // Roll righting
-    totalTorque.x -= euler.x * (SHIP_CONFIG.rightingTorque * 0.8); // Pitch righting
+    // 5. Hydrostatic Righting Moment (Coordinate-free Ballast Keel Stabilization)
+    // Computes restoring torque vector that rotates ship's local UP back to world UP
+    const worldUp = new THREE.Vector3(0, 1, 0);
+    const rightingAxis = new THREE.Vector3().crossVectors(up, worldUp);
+    const sinTilt = rightingAxis.length();
+    if (sinTilt > 0.0001) {
+      rightingAxis.normalize();
+      const tiltAngle = Math.asin(Math.min(1.0, sinTilt));
+      // Deep keel ballast provides sharp restoring torque preventing capsize
+      const stiffness = SHIP_CONFIG.rightingTorque * (1.0 + Math.pow(tiltAngle / 0.35, 2.0) * 3.5);
+      totalTorque.addScaledVector(rightingAxis, tiltAngle * stiffness);
+    }
 
-    // 5. Integrate Motion (Newton-Euler)
+    // 6. Integrate Motion (Newton-Euler)
     const acceleration = totalForce.divideScalar(SHIP_CONFIG.mass);
     this.linearVelocity.addScaledVector(acceleration, dt);
+
+    // Island Shore Grounding / Collision (Prevents sailing through islands and cliff tumbling)
+    if (archipelago && archipelago.islands) {
+      for (const isle of archipelago.islands) {
+        const dx = this.position.x - isle.pos.x;
+        const dz = this.position.z - isle.pos.z;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+        const minClearance = isle.radius + 12.0;
+        if (dist < minClearance && dist > 0.1) {
+          const nx = dx / dist;
+          const nz = dz / dist;
+          const penetration = minClearance - dist;
+          this.position.x += nx * penetration * 0.9;
+          this.position.z += nz * penetration * 0.9;
+
+          // Kill velocity heading into shore
+          const vDotN = this.linearVelocity.x * nx + this.linearVelocity.z * nz;
+          if (vDotN < 0) {
+            this.linearVelocity.x -= nx * vDotN * 1.6;
+            this.linearVelocity.z -= nz * vDotN * 1.6;
+          }
+        }
+      }
+    }
+
     this.position.addScaledVector(this.linearVelocity, dt);
 
-    // Moments of inertia approximation
-    const invInertia = new THREE.Vector3(
-      1.0 / (SHIP_CONFIG.mass * 24.0), // Pitch inertia
-      1.0 / (SHIP_CONFIG.mass * 18.0), // Yaw inertia
-      1.0 / (SHIP_CONFIG.mass * 8.0)   // Roll inertia
-    );
+    // World angular acceleration
+    const angularAcceleration = totalTorque.divideScalar(SHIP_CONFIG.mass * 18.0);
+    this.angularVelocity.addScaledVector(angularAcceleration, dt);
+    this.angularVelocity.multiplyScalar(Math.exp(-2.5 * dt)); // Viscous rotational decay
+    this.angularVelocity.clampLength(0, 1.6); // Prevent catastrophic rotational spin
 
-    this.angularVelocity.x += totalTorque.x * invInertia.x * dt;
-    this.angularVelocity.y += totalTorque.y * invInertia.y * dt;
-    this.angularVelocity.z += totalTorque.z * invInertia.z * dt;
+    // Update quaternion in WORLD space
+    const angSpeed = this.angularVelocity.length();
+    if (angSpeed > 0.0001) {
+      const rotDelta = new THREE.Quaternion().setFromAxisAngle(
+        this.angularVelocity.clone().normalize(),
+        angSpeed * dt
+      );
+      this.quaternion.premultiply(rotDelta).normalize();
+    }
 
-    // Update quaternion from angular velocity
-    const rotDelta = new THREE.Quaternion().setFromAxisAngle(
-      this.angularVelocity.clone().normalize(),
-      this.angularVelocity.length() * dt
-    );
-    this.quaternion.multiply(rotDelta).normalize();
-
-    // 6. Apply state to 3D Ship object
+    // 7. Apply state to 3D Ship object
     this.ship.position.copy(this.position);
     this.ship.quaternion.copy(this.quaternion);
 
-    // 7. Update Telemetry readings
-    const currentEuler = new THREE.Euler().setFromQuaternion(this.quaternion, 'YXZ');
-    this.pitchDeg = THREE.MathUtils.radToDeg(currentEuler.x);
-    this.rollDeg = THREE.MathUtils.radToDeg(currentEuler.z);
+    // 8. Robust Attitude & Heading Telemetry (Coordinate-free, No Gimbal Lock)
+    // Pitch: bow inclination relative to horizon
+    this.pitchDeg = THREE.MathUtils.radToDeg(Math.asin(THREE.MathUtils.clamp(forward.y, -1.0, 1.0)));
+    // Roll: starboard rail inclination relative to horizon
+    this.rollDeg = THREE.MathUtils.radToDeg(Math.asin(THREE.MathUtils.clamp(right.y, -1.0, 1.0)));
     
-    // Heading in nautical degrees (0 to 360)
-    let heading = THREE.MathUtils.radToDeg(-currentEuler.y) % 360;
+    // Heading in nautical degrees (0 to 360, where 0=N, 90=E, 180=S, 270=W)
+    let heading = THREE.MathUtils.radToDeg(Math.atan2(forward.x, forward.z));
     if (heading < 0) heading += 360;
-    this.headingDeg = Math.round(heading);
+    this.headingDeg = Math.round(heading) % 360;
 
-    // 8. Live Marine Depth Sounder
+    // 9. Live Marine Depth Sounder
     if (archipelago) {
       this.currentDepthMeters = archipelago.getWaterDepthAt(this.position);
       this.shallowAlarm = (this.currentDepthMeters < 8.0);
