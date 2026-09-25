@@ -3,9 +3,16 @@ import * as THREE from 'three';
 import { WEATHER_PRESETS } from './constants.js';
 
 export class WeatherManager {
-  constructor(scene, initialPresetId = 'sunset') {
+  constructor(scene, renderer = null, initialPresetId = 'sunset') {
     this.scene = scene;
+    this.renderer = renderer;
     this.currentPreset = WEATHER_PRESETS[initialPresetId] || WEATHER_PRESETS.sunset;
+    this.currentEnvMap = null;
+
+    if (this.renderer) {
+      this.pmremGenerator = new THREE.PMREMGenerator(this.renderer);
+      this.pmremGenerator.compileEquirectangularShader();
+    }
 
     this.initLighting();
     this.initSkyDome();
@@ -13,6 +20,71 @@ export class WeatherManager {
     this.initMoon();
     this.initStarfield();
     this.applyPreset(this.currentPreset);
+  }
+
+  generateEnvironmentMap(preset) {
+    if (!this.pmremGenerator) return;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+
+    // 1. Sky & Horizon Gradient
+    const topCol = new THREE.Color(preset.skyTopColor);
+    const horizCol = new THREE.Color(preset.skyHorizonColor);
+    const deepCol = new THREE.Color(...preset.waterDeepColor);
+    const shallowCol = new THREE.Color(...preset.waterShallowColor);
+    const fogCol = new THREE.Color(preset.fogColor);
+
+    const grad = ctx.createLinearGradient(0, 0, 0, 256);
+    grad.addColorStop(0.0, `#${topCol.getHexString()}`);
+    grad.addColorStop(0.46, `#${horizCol.getHexString()}`);
+    grad.addColorStop(0.50, `#${fogCol.getHexString()}`);
+    grad.addColorStop(0.54, `#${shallowCol.getHexString()}`);
+    grad.addColorStop(1.0, `#${deepCol.getHexString()}`);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 512, 256);
+
+    // 2. Sun Disk & Atmospheric Corona
+    if (preset.sunPosition && preset.sunPosition[1] > -30) {
+      const sunDir = new THREE.Vector3(...preset.sunPosition).normalize();
+      const u = (Math.atan2(sunDir.x, sunDir.z) / (Math.PI * 2) + 0.5) * 512;
+      const v = (0.5 - Math.asin(Math.max(-0.99, Math.min(0.99, sunDir.y))) / Math.PI) * 256;
+
+      const sunCol = new THREE.Color(preset.sunColor);
+      const sunGlowCol = new THREE.Color(preset.sunGlowColor || preset.sunColor);
+
+      const sunGrad = ctx.createRadialGradient(u, v, 2, u, v, 70);
+      sunGrad.addColorStop(0.0, '#ffffff');
+      sunGrad.addColorStop(0.18, `#${sunCol.getHexString()}`);
+      sunGrad.addColorStop(0.55, `#${sunGlowCol.getHexString()}`);
+      sunGrad.addColorStop(1.0, 'rgba(0,0,0,0)');
+      ctx.fillStyle = sunGrad;
+      ctx.fillRect(u - 75, v - 75, 150, 150);
+    }
+
+    // 3. Moon Disk for Night/Aurora
+    if (preset.moonPosition && preset.moonPosition[1] > 0 && preset.moonIntensity > 0) {
+      const moonDir = new THREE.Vector3(...preset.moonPosition).normalize();
+      const mu = (Math.atan2(moonDir.x, moonDir.z) / (Math.PI * 2) + 0.5) * 512;
+      const mv = (0.5 - Math.asin(Math.max(-0.99, Math.min(0.99, moonDir.y))) / Math.PI) * 256;
+
+      const moonGrad = ctx.createRadialGradient(mu, mv, 2, mu, mv, 40);
+      moonGrad.addColorStop(0.0, '#ffffff');
+      moonGrad.addColorStop(0.3, '#c8e2ff');
+      moonGrad.addColorStop(1.0, 'rgba(0,0,0,0)');
+      ctx.fillStyle = moonGrad;
+      ctx.fillRect(mu - 45, mv - 45, 90, 90);
+    }
+
+    const canvasTexture = new THREE.CanvasTexture(canvas);
+    const envMap = this.pmremGenerator.fromEquirectangular(canvasTexture).texture;
+    canvasTexture.dispose();
+
+    if (this.currentEnvMap) this.currentEnvMap.dispose();
+    this.currentEnvMap = envMap;
+    this.scene.environment = envMap;
   }
 
   initLighting() {
@@ -62,7 +134,6 @@ export class WeatherManager {
 
   // 1. SKY DOME
   initSkyDome() {
-    // Normal SphereGeometry with side: THREE.BackSide (no negative scale)
     const skyGeo = new THREE.SphereGeometry(1200, 48, 32);
 
     this.skyMat = new THREE.ShaderMaterial({
@@ -94,14 +165,18 @@ export class WeatherManager {
         void main() {
           vec3 dir = normalize(vWorldPos);
 
-          // Height gradient from horizon (y=0) to zenith (y=1)
-          float h = clamp(dir.y * 1.5, 0.0, 1.0);
-          vec3 sky = mix(uBottomColor, uTopColor, pow(h, 0.7));
+          // Optical height gradient from horizon (y=0) to zenith (y=1)
+          float h = clamp(dir.y * 1.35, 0.0, 1.0);
+          vec3 sky = mix(uBottomColor, uTopColor, pow(h, 0.58));
 
-          // Sun atmospheric scatter flare
+          // Physically-based Mie forward atmospheric scattering halo around the sun
           float sunDot = max(dot(dir, normalize(uSunDir)), 0.0);
-          float sunScatter = pow(sunDot, 16.0) * 0.75 + pow(sunDot, 64.0) * 1.2;
-          sky += uSunColor * sunScatter;
+          float sunGlow = pow(sunDot, 12.0) * 0.6 + pow(sunDot, 64.0) * 1.4;
+          sky += uSunColor * sunGlow;
+
+          // Horizon haze blending band
+          float horizonHaze = exp(-max(dir.y, 0.0) * 8.0);
+          sky = mix(sky, uBottomColor, horizonHaze * 0.35);
 
           // Aurora Borealis curtains in upper atmosphere (Night preset)
           if (uAurora > 0.5 && dir.y > 0.15) {
@@ -270,6 +345,9 @@ export class WeatherManager {
 
     // 6. Stars
     this.starMat.opacity = preset.starsOpacity || 0.0;
+
+    // 7. Dynamic IBL Environment Map for physical ship reflections
+    this.generateEnvironmentMap(preset);
   }
 
   setPresetById(id) {

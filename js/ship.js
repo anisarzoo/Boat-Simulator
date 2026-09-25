@@ -1,6 +1,70 @@
 // High-detail procedural 3D Exploration Mega-Yacht model
 import * as THREE from 'three';
 
+function createTeakTextures() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d');
+
+  const bumpCanvas = document.createElement('canvas');
+  bumpCanvas.width = 512;
+  bumpCanvas.height = 512;
+  const bctx = bumpCanvas.getContext('2d');
+
+  ctx.fillStyle = '#a8794c';
+  ctx.fillRect(0, 0, 512, 512);
+
+  bctx.fillStyle = '#808080';
+  bctx.fillRect(0, 0, 512, 512);
+
+  const plankCount = 16;
+  const plankWidth = 512 / plankCount;
+
+  for (let i = 0; i < plankCount; i++) {
+    const x = i * plankWidth;
+    const hueOffset = (Math.random() - 0.5) * 8;
+    const lumOffset = (Math.random() - 0.5) * 10;
+    ctx.fillStyle = `hsl(${32 + hueOffset}, 44%, ${45 + lumOffset}%)`;
+    ctx.fillRect(x + 1.5, 0, plankWidth - 3, 512);
+
+    for (let g = 0; g < 16; g++) {
+      const gx = x + 2 + Math.random() * (plankWidth - 5);
+      const alpha = 0.05 + Math.random() * 0.08;
+      ctx.strokeStyle = Math.random() > 0.5 ? `rgba(60, 35, 15, ${alpha})` : `rgba(220, 180, 130, ${alpha})`;
+      ctx.lineWidth = 1.0;
+      ctx.beginPath();
+      ctx.moveTo(gx, 0);
+      ctx.bezierCurveTo(
+        gx + (Math.random() - 0.5) * 2, 170,
+        gx + (Math.random() - 0.5) * 2, 340,
+        gx + (Math.random() - 0.5) * 2, 512
+      );
+      ctx.stroke();
+    }
+
+    // Black polyurethane caulking seam
+    ctx.fillStyle = '#14181c';
+    ctx.fillRect(x - 1.5, 0, 3, 512);
+
+    // Bump map: recessed groove
+    bctx.fillStyle = '#101010';
+    bctx.fillRect(x - 1.5, 0, 3, 512);
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(1.5, 4.0);
+
+  const bumpMap = new THREE.CanvasTexture(bumpCanvas);
+  bumpMap.wrapS = THREE.RepeatWrapping;
+  bumpMap.wrapT = THREE.RepeatWrapping;
+  bumpMap.repeat.set(1.5, 4.0);
+
+  return { texture, bumpMap };
+}
+
 export class Ship {
   constructor(scene) {
     this.scene = scene;
@@ -19,48 +83,53 @@ export class Ship {
   }
 
   buildShip() {
-    // 1. Premium Materials
+    // 1. Ultra-Realistic PBR Materials
+    const teak = createTeakTextures();
+
     const matHullDark = new THREE.MeshStandardMaterial({
-      color: 0x0c1520, // Midnight blue / anthracite marine hull
-      roughness: 0.22,
+      color: 0x0a1420, // Deep nautical midnight blue
+      roughness: 0.16,
       metalness: 0.35
     });
 
     const matHullWhite = new THREE.MeshStandardMaterial({
-      color: 0xf4f7fa, // Lustrous off-white gelcoat
-      roughness: 0.18,
-      metalness: 0.2
+      color: 0xf6f9fc, // High-gloss gelcoat marine composite
+      roughness: 0.12,
+      metalness: 0.22
     });
 
     const matStripe = new THREE.MeshStandardMaterial({
-      color: 0xcc291f, // Classic yacht red boot-topping stripe
-      roughness: 0.3
+      color: 0xc8251a, // Classic yacht red boot-topping stripe
+      roughness: 0.25,
+      metalness: 0.1
     });
 
     const matDeckTeak = new THREE.MeshStandardMaterial({
-      color: 0xa2784b, // Warm golden teak wood planking
-      roughness: 0.72,
-      metalness: 0.05
+      map: teak.texture,
+      bumpMap: teak.bumpMap,
+      bumpScale: 0.035,
+      roughness: 0.58,
+      metalness: 0.04
     });
 
     const matGlass = new THREE.MeshStandardMaterial({
-      color: 0x071524,
-      roughness: 0.05,
-      metalness: 0.95,
+      color: 0x05101a,
+      roughness: 0.03,
+      metalness: 0.9,
       transparent: true,
-      opacity: 0.85
+      opacity: 0.78
     });
 
     const matChrome = new THREE.MeshStandardMaterial({
-      color: 0xe8eef5,
-      metalness: 0.95,
-      roughness: 0.12
+      color: 0xf2f6fa,
+      metalness: 0.98,
+      roughness: 0.08
     });
 
     const matBrass = new THREE.MeshStandardMaterial({
-      color: 0xd4af37,
-      metalness: 0.92,
-      roughness: 0.25
+      color: 0xdfb443,
+      metalness: 0.94,
+      roughness: 0.2
     });
 
     const matConsoleGlow = new THREE.MeshBasicMaterial({

@@ -64,7 +64,7 @@ class App {
 
   initSystems() {
     // 1. Weather and lighting
-    this.weather = new WeatherManager(this.scene, 'sunset');
+    this.weather = new WeatherManager(this.scene, this.renderer, 'sunset');
 
     // 2. Dynamic Gerstner Ocean
     this.ocean = new Ocean(this.scene, this.weather.currentPreset);

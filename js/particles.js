@@ -6,8 +6,8 @@ export class ParticleSystem {
     this.scene = scene;
 
     // Wake and bow spray particles
-    this.wakeCount = 750;
-    this.sprayCount = 450;
+    this.wakeCount = 1400;
+    this.sprayCount = 550;
     this.rainCount = 2500;
 
     this.initWake();
@@ -25,30 +25,46 @@ export class ParticleSystem {
 
     for (let i = 0; i < this.wakeCount; i++) {
       this.wakeLife[i] = 0;
-      this.wakeMaxLife[i] = 5.0; // 5 seconds wake trail persistence
+      this.wakeMaxLife[i] = 5.5; // 5.5s realistic persistent wake trail
       this.wakePositions[i * 3 + 1] = -100;
     }
 
     this.wakeGeo.setAttribute('position', new THREE.BufferAttribute(this.wakePositions, 3));
 
-    // Circular soft foam texture
+    // High-resolution aerated bubble froth texture
     const canvas = document.createElement('canvas');
-    canvas.width = 64; canvas.height = 64;
+    canvas.width = 128; canvas.height = 128;
     const ctx = canvas.getContext('2d');
-    const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
-    grad.addColorStop(0, 'rgba(255,255,255,0.95)');
-    grad.addColorStop(0.45, 'rgba(225,248,255,0.6)');
-    grad.addColorStop(1, 'rgba(225,248,255,0)');
+
+    // Soft milky froth base
+    const grad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+    grad.addColorStop(0, 'rgba(255, 255, 255, 0.98)');
+    grad.addColorStop(0.35, 'rgba(235, 250, 255, 0.75)');
+    grad.addColorStop(0.7, 'rgba(215, 245, 255, 0.35)');
+    grad.addColorStop(1, 'rgba(215, 245, 255, 0)');
     ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, 64, 64);
+    ctx.fillRect(0, 0, 128, 128);
+
+    // Micro-bubble clusters for realistic physical froth
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.65)';
+    ctx.lineWidth = 1.2;
+    for (let b = 0; b < 24; b++) {
+      const bx = 64 + (Math.random() - 0.5) * 55;
+      const by = 64 + (Math.random() - 0.5) * 55;
+      const br = 3 + Math.random() * 8;
+      ctx.beginPath();
+      ctx.arc(bx, by, br, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
     const texture = new THREE.CanvasTexture(canvas);
 
     this.wakeMat = new THREE.PointsMaterial({
-      color: 0xf0faff,
-      size: 3.8,
+      color: 0xf2fbff,
+      size: 4.4,
       map: texture,
       transparent: true,
-      opacity: 0.72,
+      opacity: 0.76,
       depthWrite: false,
       blending: THREE.NormalBlending
     });
@@ -130,23 +146,40 @@ export class ParticleSystem {
   }
 
   emitWake(sternWorldPos, speedKnots, shipRight) {
-    if (Math.abs(speedKnots) < 0.8) return;
+    if (Math.abs(speedKnots) < 0.6) return;
 
-    // Twin propeller churning streams
+    const speedFactor = Math.min(Math.abs(speedKnots) / 18.0, 1.2);
+
+    // 1. Twin propeller churning streams
     for (const offsetSign of [-1.15, 1.15]) {
       const idx = this.wakeIndex;
       const propPos = sternWorldPos.clone().add(shipRight.clone().multiplyScalar(offsetSign));
 
-      this.wakePositions[idx * 3] = propPos.x + (Math.random() - 0.5) * 0.8;
+      this.wakePositions[idx * 3] = propPos.x + (Math.random() - 0.5) * 0.9;
       this.wakePositions[idx * 3 + 1] = propPos.y + 0.12;
-      this.wakePositions[idx * 3 + 2] = propPos.z + (Math.random() - 0.5) * 0.8;
+      this.wakePositions[idx * 3 + 2] = propPos.z + (Math.random() - 0.5) * 0.9;
 
-      // Slow lateral expansion of the wake
-      this.wakeVelocities[idx * 3] = shipRight.x * offsetSign * 0.45;
+      // Realistic speed-dependent lateral expansion into V-wake
+      this.wakeVelocities[idx * 3] = shipRight.x * offsetSign * (0.35 + speedFactor * 0.4);
       this.wakeVelocities[idx * 3 + 1] = 0;
-      this.wakeVelocities[idx * 3 + 2] = shipRight.z * offsetSign * 0.45;
+      this.wakeVelocities[idx * 3 + 2] = shipRight.z * offsetSign * (0.35 + speedFactor * 0.4);
 
       this.wakeLife[idx] = this.wakeMaxLife[idx];
+      this.wakeIndex = (this.wakeIndex + 1) % this.wakeCount;
+    }
+
+    // 2. Central bubbly froth cluster
+    if (Math.random() > 0.35) {
+      const idx = this.wakeIndex;
+      this.wakePositions[idx * 3] = sternWorldPos.x + (Math.random() - 0.5) * 1.5;
+      this.wakePositions[idx * 3 + 1] = sternWorldPos.y + 0.14;
+      this.wakePositions[idx * 3 + 2] = sternWorldPos.z + (Math.random() - 0.5) * 1.2;
+
+      this.wakeVelocities[idx * 3] = (Math.random() - 0.5) * 0.25;
+      this.wakeVelocities[idx * 3 + 1] = 0;
+      this.wakeVelocities[idx * 3 + 2] = (Math.random() - 0.5) * 0.25;
+
+      this.wakeLife[idx] = this.wakeMaxLife[idx] * 0.85;
       this.wakeIndex = (this.wakeIndex + 1) % this.wakeCount;
     }
   }
