@@ -575,6 +575,7 @@ export class Archipelago {
           varying vec3 vWorldPos;
           varying vec3 vViewDir;
           varying vec3 vNormal;
+          varying vec3 vBeamDir;
 
           void main() {
             vLocalPos = position;
@@ -582,6 +583,7 @@ export class Archipelago {
             vWorldPos = worldPos.xyz;
             vNormal = normalize(mat3(modelMatrix) * normal);
             vViewDir = normalize(cameraPosition - worldPos.xyz);
+            vBeamDir = normalize(mat3(modelMatrix) * vec3(0.0, 0.0, 1.0));
             gl_Position = projectionMatrix * viewMatrix * worldPos;
           }
         `,
@@ -597,6 +599,7 @@ export class Archipelago {
           varying vec3 vWorldPos;
           varying vec3 vViewDir;
           varying vec3 vNormal;
+          varying vec3 vBeamDir;
 
           void main() {
             // Longitudinal progress along the beam (0.0 at lantern, 1.0 at far ocean reach)
@@ -622,7 +625,7 @@ export class Archipelago {
             float radialProfile = mix(coreGlow, solidBase, 0.42) * softEdge;
 
             // Forward Mie scattering (beam looks intensely radiant when aimed near the observer)
-            vec3 beamDir = normalize(mat3(modelMatrix) * vec3(0.0, 0.0, 1.0));
+            vec3 beamDir = normalize(vBeamDir);
             float forwardScatter = pow(max(0.0, dot(vViewDir, -beamDir)), 2.8) * 0.45 + 0.65;
 
             // View-angle thickness accumulation: reinforces solid presence from all camera angles
