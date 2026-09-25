@@ -1,5 +1,6 @@
 // Dynamic Marine Wildlife System: Bow-Riding Dolphins & Breaching Humpback Whales
 import * as THREE from 'three';
+import { sampleOcean } from './gerstner.js';
 
 export class MarineWildlife {
   constructor(scene) {
@@ -11,6 +12,7 @@ export class MarineWildlife {
     this.initDolphins();
     this.initWhales();
     this.initSpoutParticles();
+    this.initSplashParticles();
   }
 
   // ── 1. HIGH-DETAIL ANATOMICAL PROCEDURAL DOLPHIN MODEL ──
@@ -326,22 +328,33 @@ export class MarineWildlife {
   }
 
   initDolphins() {
-    // Pod of 4 playful bow-riding dolphins
+    // Pod of 4 playful bow-riding dolphins with choreographed predictable jumping
     this.podCount = 4;
+    this.dolphins = [];
+
     for (let i = 0; i < this.podCount; i++) {
       const model = this.createDolphinModel();
+      // 2 on port bow wave (-2.8m, -1.4m), 2 on starboard bow wave (+1.4m, +2.8m)
+      const isPort = (i % 2 === 0);
+      const tier = Math.floor(i / 2); // 0 = lead pair, 1 = trail pair
+      const latSign = isPort ? -1 : 1;
+      const latDist = (tier === 0) ? 2.4 : 3.8;
+      const fwdDist = (tier === 0) ? 13.2 : 10.5;
+
       const dolphin = {
         id: i,
         ...model,
-        pos: new THREE.Vector3(0, -1.5, 0),
+        pos: new THREE.Vector3(0, -1.2, 0),
         vel: new THREE.Vector3(),
-        offsetLateral: (i - 1.5) * 2.8, // Port / starboard spread around bow
-        offsetForward: 11.5 + (i % 2) * 3.5, // 11m to 15m ahead of yacht bow
-        phase: i * 1.6,
-        jumpTimer: 2.0 + Math.random() * 5.0,
+        offsetLateral: latSign * latDist,
+        offsetForward: fwdDist,
+        phase: i * 1.57, // Smooth phased swimming undulation
+        jumpTimer: 1.2 + i * 2.2, // Predictable staggered jump cadence (1.2s, 3.4s, 5.6s, 7.8s)
+        jumpDuration: 1.4,
         isJumping: false,
         jumpProgress: 0,
-        swimSpeed: 8.0
+        hasSplashedUp: false,
+        hasSplashedDown: false
       };
       this.dolphins.push(dolphin);
       this.scene.add(model.group);
@@ -434,13 +447,91 @@ export class MarineWildlife {
     }
   }
 
+  // ── 4. DYNAMIC DOLPHIN WATER SPLASH & FOAM PARTICLES ──
+  initSplashParticles() {
+    const count = 160;
+    const geo = new THREE.BufferGeometry();
+    const positions = new Float32Array(count * 3);
+    const alphas = new Float32Array(count);
+
+    for (let i = 0; i < count; i++) {
+      positions[i * 3] = 0;
+      positions[i * 3 + 1] = -100;
+      positions[i * 3 + 2] = 0;
+      alphas[i] = 0.0;
+    }
+
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute('alpha', new THREE.BufferAttribute(alphas, 1));
+
+    const mat = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.NormalBlending,
+      uniforms: {
+        uColor: { value: new THREE.Color(0xf2f8ff) }
+      },
+      vertexShader: `
+        attribute float alpha;
+        varying float vAlpha;
+        void main() {
+          vAlpha = alpha;
+          vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
+          gl_PointSize = (15.0 / -mvPos.z) * (1.0 + (1.0 - alpha) * 2.2);
+          gl_Position = projectionMatrix * mvPos;
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 uColor;
+        varying float vAlpha;
+        void main() {
+          float d = length(gl_PointCoord - vec2(0.5));
+          if (d > 0.5) discard;
+          float falloff = smoothstep(0.5, 0.0, d);
+          gl_FragColor = vec4(uColor, falloff * vAlpha * 0.7);
+        }
+      `
+    });
+
+    this.splashMesh = new THREE.Points(geo, mat);
+    this.scene.add(this.splashMesh);
+
+    this.splashPool = [];
+    for (let i = 0; i < count; i++) {
+      this.splashPool.push({
+        idx: i,
+        active: false,
+        pos: new THREE.Vector3(),
+        vel: new THREE.Vector3(),
+        life: 0,
+        maxLife: 1.2
+      });
+    }
+  }
+
+  triggerSplash(worldPos, count = 20) {
+    let triggered = 0;
+    for (const p of this.splashPool) {
+      if (!p.active) {
+        p.active = true;
+        p.pos.copy(worldPos).add(new THREE.Vector3((Math.random() - 0.5) * 0.5, 0.1, (Math.random() - 0.5) * 0.5));
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 1.6 + Math.random() * 2.4;
+        p.vel.set(Math.cos(angle) * speed, 2.8 + Math.random() * 3.2, Math.sin(angle) * speed);
+        p.life = 0;
+        p.maxLife = 0.75 + Math.random() * 0.45;
+        triggered++;
+        if (triggered >= count) break;
+      }
+    }
+  }
+
   triggerBlowholeSpout(worldOrigin) {
     let triggered = 0;
     for (const p of this.spoutPool) {
       if (!p.active) {
         p.active = true;
         p.pos.copy(worldOrigin).add(new THREE.Vector3((Math.random() - 0.5) * 0.8, 0, (Math.random() - 0.5) * 0.8));
-        // Upward misty jet (7-10 m/s) with outward spray divergence
         p.vel.set(
           (Math.random() - 0.5) * 2.2,
           7.5 + Math.random() * 4.5,
@@ -464,75 +555,108 @@ export class MarineWildlife {
       shipRight.applyQuaternion(shipQuaternion);
     }
 
-    // ── 1. UPDATE DOLPHINS (BOW-RIDING DYNAMICS) ──
+    // ── 1. UPDATE DOLPHINS (PREDICTABLE DYNAMIC CHOREOGRAPHY) ──
     const isSailing = shipSpeedKnots > 3.0;
 
     for (const d of this.dolphins) {
-      d.phase += dt * (isSailing ? 4.8 : 2.2);
-
+      d.phase += dt * (isSailing ? 5.2 : 3.0);
       d.jumpTimer -= dt;
 
-      if (!d.isJumping && d.jumpTimer <= 0 && isSailing) {
-        // Trigger graceful breach jump!
+      // Predictable jump cadence: activates on cadence both when sailing and idling!
+      if (!d.isJumping && d.jumpTimer <= 0) {
         d.isJumping = true;
         d.jumpProgress = 0;
-        d.jumpDuration = 1.5 + Math.random() * 0.5;
+        d.jumpDuration = isSailing ? 1.4 : 1.25;
+        d.hasSplashedUp = false;
+        d.hasSplashedDown = false;
       }
 
       if (d.isJumping) {
         d.jumpProgress += dt / d.jumpDuration;
         const jp = d.jumpProgress;
 
-        // Bow pressure wave target position
-        const bowTarget = shipPosition.clone()
-          .addScaledVector(shipForward, d.offsetForward)
-          .addScaledVector(shipRight, d.offsetLateral);
+        // Dynamic water splash triggers
+        if (jp > 0.08 && !d.hasSplashedUp) {
+          d.hasSplashedUp = true;
+          this.triggerSplash(d.pos, 16);
+        }
+        if (jp > 0.88 && !d.hasSplashedDown) {
+          d.hasSplashedDown = true;
+          this.triggerSplash(d.pos, 22);
+        }
 
-        // Parabolic trajectory out of water and back
-        const jumpY = Math.sin(jp * Math.PI) * 2.8 - 0.75;
-        d.pos.x = THREE.MathUtils.lerp(d.pos.x, bowTarget.x, 0.14);
-        d.pos.z = THREE.MathUtils.lerp(d.pos.z, bowTarget.z, 0.14);
-        d.pos.y = jumpY;
+        if (isSailing) {
+          // Dynamic bow wave tracking with advance surge
+          const bowTarget = shipPosition.clone()
+            .addScaledVector(shipForward, d.offsetForward + jp * 2.2)
+            .addScaledVector(shipRight, d.offsetLateral);
 
-        // Dynamic pitch arch: head up on ascent (+0.6 rad), head down on dive (-0.75 rad)
-        const jumpPitch = (0.5 - jp) * 1.5;
-        const shipYaw = Math.atan2(shipForward.x, shipForward.z);
-        d.group.rotation.set(jumpPitch, shipYaw, (d.id % 2 === 0 ? -0.22 : 0.22));
+          const waveSample = sampleOcean(bowTarget.x, bowTarget.z, time, 1.0);
+          const jumpHeight = Math.sin(jp * Math.PI) * 2.75;
+          d.pos.x = THREE.MathUtils.lerp(d.pos.x, bowTarget.x, 0.16);
+          d.pos.z = THREE.MathUtils.lerp(d.pos.z, bowTarget.z, 0.16);
+          d.pos.y = waveSample.height + jumpHeight - 0.72;
+
+          // Realistic dynamic jump arching: nose up on ascent, arched at crest, nose down on entry
+          const jumpPitch = (0.5 - jp) * 1.6;
+          const shipYaw = Math.atan2(shipForward.x, shipForward.z);
+          const bankRoll = (d.offsetLateral > 0 ? 0.24 : -0.24);
+          d.group.rotation.set(jumpPitch, shipYaw, bankRoll);
+        } else {
+          // Idle porpoise rolling jump alongside the boat
+          const orbitAngle = time * 0.42 + (d.id * Math.PI * 0.5);
+          const radius = 14.0 + (d.id % 2) * 4.0;
+          const targetX = shipPosition.x + Math.sin(orbitAngle) * radius;
+          const targetZ = shipPosition.z + Math.cos(orbitAngle) * radius;
+          const waveSample = sampleOcean(targetX, targetZ, time, 1.0);
+
+          const jumpHeight = Math.sin(jp * Math.PI) * 1.65;
+          d.pos.x = THREE.MathUtils.lerp(d.pos.x, targetX, 0.14);
+          d.pos.z = THREE.MathUtils.lerp(d.pos.z, targetZ, 0.14);
+          d.pos.y = waveSample.height + jumpHeight - 0.55;
+
+          const tangentYaw = orbitAngle + Math.PI / 2;
+          const jumpPitch = (0.5 - jp) * 1.25;
+          d.group.rotation.set(jumpPitch, tangentYaw, 0.22);
+        }
 
         if (d.jumpProgress >= 1.0) {
           d.isJumping = false;
-          d.jumpTimer = 6.0 + Math.random() * 8.0;
+          // Predictable rhythmic loop: resets timer to 8.8 seconds
+          // With 4 dolphins, jumps occur every 2.2 seconds!
+          d.jumpTimer = 8.8;
         }
       } else if (isSailing) {
-        // Swimming submerged just below surface riding the bow pressure wave (0.8m to 1.4m depth)
+        // Submerged cruising riding the bow pressure wave (0.8m to 1.4m depth)
         const bowTarget = shipPosition.clone()
           .addScaledVector(shipForward, d.offsetForward)
-          .addScaledVector(shipRight, d.offsetLateral + Math.sin(time * 1.2 + d.id) * 1.0);
+          .addScaledVector(shipRight, d.offsetLateral + Math.sin(time * 1.4 + d.id) * 0.85);
 
-        const swimY = -1.15 + Math.sin(d.phase) * 0.28;
-        d.pos.lerp(new THREE.Vector3(bowTarget.x, swimY, bowTarget.z), Math.min(1.0, 5.0 * dt));
+        const waveSample = sampleOcean(bowTarget.x, bowTarget.z, time, 1.0);
+        const swimY = waveSample.height - 1.1 + Math.sin(d.phase) * 0.25;
 
-        // Subtle spine undulation
+        d.pos.lerp(new THREE.Vector3(bowTarget.x, swimY, bowTarget.z), Math.min(1.0, 5.5 * dt));
+
         const undulationPitch = Math.cos(d.phase) * 0.22;
         const shipYaw = Math.atan2(shipForward.x, shipForward.z);
-        d.group.rotation.set(undulationPitch, shipYaw, Math.sin(d.phase * 0.5) * 0.12);
+        d.group.rotation.set(undulationPitch, shipYaw, Math.sin(d.phase * 0.5) * 0.1);
       } else {
-        // Idle state: Playfully circle around stationary / drifting vessel
-        const circleAngle = time * 0.35 + (d.id * Math.PI * 0.5);
-        const radius = 16.0 + (d.id % 2) * 5.0;
-        const targetX = shipPosition.x + Math.sin(circleAngle) * radius;
-        const targetZ = shipPosition.z + Math.cos(circleAngle) * radius;
-        const swimY = -1.25 + Math.sin(d.phase) * 0.35;
+        // Idle swimming around stationary / drifting vessel
+        const orbitAngle = time * 0.32 + (d.id * Math.PI * 0.5);
+        const radius = 15.0 + (d.id % 2) * 5.0;
+        const targetX = shipPosition.x + Math.sin(orbitAngle) * radius;
+        const targetZ = shipPosition.z + Math.cos(orbitAngle) * radius;
+        const waveSample = sampleOcean(targetX, targetZ, time, 1.0);
+        const swimY = waveSample.height - 1.05 + Math.sin(d.phase) * 0.3;
 
         d.pos.lerp(new THREE.Vector3(targetX, swimY, targetZ), Math.min(1.0, 3.5 * dt));
 
-        // Facing tangent of orbit circle
-        const tangentYaw = circleAngle + Math.PI / 2;
-        d.group.rotation.set(Math.cos(d.phase) * 0.18, tangentYaw, 0.15);
+        const tangentYaw = orbitAngle + Math.PI / 2;
+        d.group.rotation.set(Math.cos(d.phase) * 0.18, tangentYaw, 0.12);
       }
 
-      // Propulsive tail flukes stroke
-      d.tailStock.rotation.x = Math.sin(d.phase * 1.9) * 0.45;
+      // Propulsive tail fluke strokes
+      d.tailStock.rotation.x = Math.sin(d.phase * 2.0) * 0.48;
       d.group.position.copy(d.pos);
     }
 
@@ -541,11 +665,9 @@ export class MarineWildlife {
       w.swimCycle += dt * 0.8;
       w.timer -= dt;
 
-      // Slow forward locomotion
       const wForward = new THREE.Vector3(Math.sin(w.heading), 0, Math.cos(w.heading));
       w.pos.addScaledVector(wForward, 3.2 * dt);
 
-      // Loop position to stay in the world surrounding the player
       const distFromShip = w.pos.distanceTo(shipPosition);
       if (distFromShip > 420) {
         w.pos.copy(shipPosition).add(new THREE.Vector3((Math.random() - 0.5) * 260, -3.0, (Math.random() - 0.5) * 260));
@@ -558,7 +680,6 @@ export class MarineWildlife {
         if (w.timer <= 0) {
           w.state = 'spout';
           w.timer = 2.4;
-          // Trigger water spout mist jet from blowhole!
           const blowholeWorld = w.pos.clone().add(w.blowholePos.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), w.heading));
           this.triggerBlowholeSpout(blowholeWorld);
         }
@@ -569,7 +690,6 @@ export class MarineWildlife {
           w.timer = 5.0;
         }
       } else if (w.state === 'dive') {
-        // Arch back, lift tail flukes high out of water, plunge deep
         w.pos.y = THREE.MathUtils.lerp(w.pos.y, -4.8, 1.0 * dt);
         w.pitch = THREE.MathUtils.lerp(w.pitch, -0.45, 1.8 * dt);
         w.tailStock.rotation.x = THREE.MathUtils.lerp(w.tailStock.rotation.x, 0.75, 2.0 * dt);
@@ -621,5 +741,36 @@ export class MarineWildlife {
 
     this.spoutMesh.geometry.attributes.position.needsUpdate = true;
     this.spoutMesh.geometry.attributes.alpha.needsUpdate = true;
+
+    // ── 4. UPDATE DOLPHIN SPLASH PARTICLES ──
+    if (this.splashMesh) {
+      const splashPos = this.splashMesh.geometry.attributes.position.array;
+      const splashAlpha = this.splashMesh.geometry.attributes.alpha.array;
+
+      for (const p of this.splashPool) {
+        if (p.active) {
+          p.life += dt;
+          p.vel.y -= 7.8 * dt; // Splash droplet gravity
+          p.pos.addScaledVector(p.vel, dt);
+
+          const normLife = p.life / p.maxLife;
+          const alpha = Math.max(0, 1.0 - normLife);
+
+          splashPos[p.idx * 3] = p.pos.x;
+          splashPos[p.idx * 3 + 1] = p.pos.y;
+          splashPos[p.idx * 3 + 2] = p.pos.z;
+          splashAlpha[p.idx] = alpha;
+
+          if (p.life >= p.maxLife || p.pos.y < -0.4) {
+            p.active = false;
+            splashPos[p.idx * 3 + 1] = -100;
+            splashAlpha[p.idx] = 0.0;
+          }
+        }
+      }
+
+      this.splashMesh.geometry.attributes.position.needsUpdate = true;
+      this.splashMesh.geometry.attributes.alpha.needsUpdate = true;
+    }
   }
 }

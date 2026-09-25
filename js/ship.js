@@ -641,14 +641,28 @@ export class Ship {
     mainDeck.receiveShadow = true;
     root.add(mainDeck);
 
-    // Foredeck curved teak planking
-    const foredeck = new THREE.Mesh(
-      new THREE.ConeGeometry(2.45, 5.2, 16),
-      matDeckTeak
-    );
-    foredeck.rotation.x = -Math.PI / 2;
-    foredeck.scale.set(1.0, 0.05, 1.0);
-    foredeck.position.set(0, 1.28, 9.2);
+    // Foredeck curved teak planking (flat horizontal deck following yacht bow flare)
+    const foredeckShape = new THREE.Shape();
+    foredeckShape.moveTo(-2.45, 0.0);
+    foredeckShape.lineTo(2.45, 0.0);
+    foredeckShape.bezierCurveTo(2.35, 1.1, 1.4, 2.2, 0.18, 3.1);
+    foredeckShape.lineTo(-0.18, 3.1);
+    foredeckShape.bezierCurveTo(-1.4, 2.2, -2.35, 1.1, -2.45, 0.0);
+    foredeckShape.closePath();
+
+    const foredeckGeo = new THREE.ExtrudeGeometry(foredeckShape, {
+      depth: 0.14,
+      bevelEnabled: true,
+      bevelSegments: 2,
+      steps: 1,
+      bevelSize: 0.02,
+      bevelThickness: 0.02
+    });
+    // Rotate so it lays flat horizontally
+    foredeckGeo.rotateX(Math.PI / 2);
+
+    const foredeck = new THREE.Mesh(foredeckGeo, matDeckTeak);
+    foredeck.position.set(0, 1.32, 8.6);
     foredeck.receiveShadow = true;
     root.add(foredeck);
 
