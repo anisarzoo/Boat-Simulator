@@ -207,42 +207,16 @@ export class Archipelago {
     group.add(rod);
 
     // Glowing Fresnel Lantern Core
-    // ── GLOWING FRESNEL LANTERN CORE & RADIANT HALO ──
+    // ── GLOWING FRESNEL LANTERN CORE ──
     const lanternY = galleryY + 2.4;
 
-    // Incandescent filament / arc core
+    // Incandescent Fresnel lens cylinder housed cleanly inside the glass lantern room
     const fresnelCore = new THREE.Mesh(
-      new THREE.SphereGeometry(1.6, 24, 24),
-      new THREE.MeshBasicMaterial({ color: 0xffffff })
+      new THREE.CylinderGeometry(1.3, 1.3, 2.2, 16),
+      new THREE.MeshBasicMaterial({ color: 0xfff8eb })
     );
     fresnelCore.position.y = lanternY;
     group.add(fresnelCore);
-
-    // Warm radiant lantern flare halo (golden incandescent beacon bloom visible miles away)
-    const lensHalo = new THREE.Mesh(
-      new THREE.SphereGeometry(5.2, 24, 24),
-      new THREE.MeshBasicMaterial({
-        color: 0xffe299,
-        transparent: true,
-        opacity: 0.8,
-        blending: THREE.AdditiveBlending
-      })
-    );
-    lensHalo.position.y = lanternY;
-    group.add(lensHalo);
-
-    // Outer atmospheric fog dispersal halo around lantern room
-    const outerHalo = new THREE.Mesh(
-      new THREE.SphereGeometry(14.0, 16, 16),
-      new THREE.MeshBasicMaterial({
-        color: 0xffb844,
-        transparent: true,
-        opacity: 0.35,
-        blending: THREE.AdditiveBlending
-      })
-    );
-    outerHalo.position.y = lanternY;
-    group.add(outerHalo);
 
     // High-power omnidirectional lantern light (illuminates tower & stormy sea around island)
     const lanternPoint = new THREE.PointLight(0xffe290, 8.5, 280, 1.0);
