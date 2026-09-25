@@ -187,13 +187,34 @@ export class Ship {
     mast.position.set(0, 5.5, 0.2);
     hullGroup.add(mast);
 
-    // Dual Searchlights on brow
-    for (const sx of [-0.65, 0.65]) {
-      const searchLight = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.28, 12), matChrome);
-      searchLight.rotation.x = Math.PI / 2;
-      searchLight.position.set(sx, 4.25, 2.7);
-      hullGroup.add(searchLight);
+    // Dual High-Power Searchlights on brow
+    this.searchlights = [];
+    for (const sx of [-0.75, 0.75]) {
+      const searchLightHousing = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.32, 12), matChrome);
+      searchLightHousing.rotation.x = Math.PI / 2;
+      searchLightHousing.position.set(sx, 4.25, 2.7);
+      hullGroup.add(searchLightHousing);
+
+      // Real Three.js forward SpotLight illuminating the sea
+      const spot = new THREE.SpotLight(0xfffaee, 6.0, 160, Math.PI / 6, 0.45, 1.2);
+      spot.position.set(sx, 4.3, 2.8);
+      const spotTarget = new THREE.Object3D();
+      spotTarget.position.set(sx * 0.4, -0.6, 50);
+      hullGroup.add(spotTarget);
+      spot.target = spotTarget;
+      hullGroup.add(spot);
+      this.searchlights.push(spot);
     }
+
+    // Underwater Mega-Yacht Stern Transom Lights
+    this.underwaterLights = [];
+    for (const sx of [-1.6, 0, 1.6]) {
+      const underGlow = new THREE.PointLight(0x00e5ff, 3.2, 16);
+      underGlow.position.set(sx, -0.6, -9.4);
+      hullGroup.add(underGlow);
+      this.underwaterLights.push(underGlow);
+    }
+    this.lightsOn = true;
 
     // 7. NAVIGATION LIGHTS
     const navRed = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.18, 0.18),
@@ -318,5 +339,16 @@ export class Ship {
       const flutter = Math.sin(time * 10.0 + this.group.position.z * 0.2) * 0.22;
       this.flag.rotation.y = flutter + (rudderInput * 0.25);
     }
+  }
+
+  toggleLights() {
+    this.lightsOn = !this.lightsOn;
+    for (const l of this.searchlights) {
+      l.intensity = this.lightsOn ? 6.0 : 0.0;
+    }
+    for (const l of this.underwaterLights) {
+      l.intensity = this.lightsOn ? 3.2 : 0.0;
+    }
+    return this.lightsOn;
   }
 }

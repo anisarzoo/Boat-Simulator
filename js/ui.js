@@ -22,12 +22,17 @@ export class UIController {
       muteBtn: document.getElementById('muteBtn'),
       hornBtn: document.getElementById('hornBtn'),
       fsBtn: document.getElementById('fsBtn'),
+      lightsBtn: document.getElementById('lightsBtn'),
+      cruiseBtn: document.getElementById('cruiseBtn'),
+      fpsVal: document.getElementById('fpsVal'),
       weatherButtons: document.querySelectorAll('.weather-btn'),
       cameraButtons: document.querySelectorAll('.cam-btn'),
       touchControls: document.getElementById('touchControls')
     };
 
     this.toastTimer = null;
+    this.frameCount = 0;
+    this.lastFpsUpdate = performance.now();
     this.initEvents();
   }
 
@@ -57,6 +62,27 @@ export class UIController {
         }
       });
     });
+
+    // Lights toggle button
+    if (this.dom.lightsBtn) {
+      this.dom.lightsBtn.addEventListener('click', () => {
+        if (this.callbacks.onToggleLights) {
+          const isOn = this.callbacks.onToggleLights();
+          this.dom.lightsBtn.style.color = isOn ? '#ffdd44' : 'var(--text-muted)';
+        }
+      });
+    }
+
+    // Cruise control autopilot button
+    if (this.dom.cruiseBtn) {
+      this.dom.cruiseBtn.addEventListener('click', () => {
+        if (this.callbacks.onToggleAutopilot) {
+          const isCruise = this.callbacks.onToggleAutopilot();
+          this.dom.cruiseBtn.style.color = isCruise ? '#00ff88' : 'var(--text-muted)';
+          this.dom.cruiseBtn.style.borderColor = isCruise ? '#00ff88' : 'var(--glass-border)';
+        }
+      });
+    }
 
     // Fog Horn button
     if (this.dom.hornBtn) {
@@ -170,5 +196,15 @@ export class UIController {
     // Roll & Pitch
     this.dom.rollVal.textContent = `${physics.rollDeg.toFixed(1)}°`;
     this.dom.pitchVal.textContent = `${physics.pitchDeg.toFixed(1)}°`;
+
+    // Live FPS readout
+    this.frameCount++;
+    const now = performance.now();
+    if (now - this.lastFpsUpdate >= 500) {
+      const fps = Math.round((this.frameCount * 1000) / (now - this.lastFpsUpdate));
+      if (this.dom.fpsVal) this.dom.fpsVal.textContent = fps;
+      this.frameCount = 0;
+      this.lastFpsUpdate = now;
+    }
   }
 }

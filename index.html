@@ -53,6 +53,16 @@
           <button class="weather-btn" data-weather="aurora">✨ Aurora</button>
         </div>
 
+        <!-- Searchlights & Transom Glow Toggle -->
+        <button id="lightsBtn" class="quick-btn" title="Toggle Searchlights & Deck Lights [L]">
+          💡 Lights [L]
+        </button>
+
+        <!-- Autopilot Cruise Toggle -->
+        <button id="cruiseBtn" class="quick-btn" title="Toggle Autopilot Cruise [C]">
+          ⚓ Cruise [C]
+        </button>
+
         <!-- Quick Horn Button -->
         <button id="hornBtn" class="quick-btn" title="Sound Ship Fog Horn [H]">
           📯 Horn [H]
@@ -67,6 +77,12 @@
         <button id="fsBtn" class="quick-btn" title="Toggle Fullscreen [F]">
           ⛶ Fullscreen
         </button>
+
+        <!-- Live FPS Pill -->
+        <div class="glass-card interactive" style="padding: 8px 14px; font-size: 12px; font-weight: 700; color: #00ff88; display: flex; align-items: center; gap: 7px;">
+          <span style="display:inline-block; width:7px; height:7px; border-radius:50%; background:#00ff88; box-shadow:0 0 8px #00ff88;"></span>
+          <span id="fpsVal">60</span> FPS
+        </div>
       </div>
     </header>
 

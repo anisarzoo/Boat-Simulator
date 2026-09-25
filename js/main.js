@@ -8,6 +8,9 @@ import { ShipPhysics } from './physics.js';
 import { ParticleSystem } from './particles.js';
 import { OceanAudio } from './audio.js';
 import { UIController } from './ui.js';
+import { BuoyManager } from './buoys.js';
+import { SeagullFlock } from './seagulls.js';
+import { CloudManager } from './clouds.js';
 
 class App {
   constructor() {
@@ -15,10 +18,11 @@ class App {
     this.time = 0;
     this.clock = new THREE.Clock();
 
-    // Input state
+    // Input & cruise state
     this.keys = {};
     this.touchThrottle = 0;
     this.touchRudder = 0;
+    this.autopilot = false;
 
     // Camera modes
     this.camMode = 'chase'; // 'chase', 'bridge', 'orbit', 'bow'
@@ -75,21 +79,41 @@ class App {
     this.particles = new ParticleSystem(this.scene);
     this.particles.setWeather(this.weather.currentPreset);
 
-    // 6. Procedural Web Audio
+    // 6. Navigation Channel Buoys (port & starboard markers on waves)
+    this.buoys = new BuoyManager(this.scene);
+
+    // 7. Soaring Seagulls Flock
+    this.seagulls = new SeagullFlock(this.scene);
+
+    // 8. Procedural Drifting Clouds
+    this.clouds = new CloudManager(this.scene, this.weather.currentPreset);
+
+    // 9. Procedural Web Audio
     this.audio = new OceanAudio();
 
-    // 7. Glassmorphic UI HUD
+    // 10. Glassmorphic UI HUD
     this.ui = new UIController({
       onWeatherChange: (id) => {
         const preset = this.weather.setPresetById(id);
         if (preset) {
           this.ocean.setWeather(preset);
           this.particles.setWeather(preset);
+          this.clouds.setWeather(preset);
         }
         return preset;
       },
       onCameraChange: (mode) => {
         this.camMode = mode;
+      },
+      onToggleLights: () => {
+        const on = this.ship.toggleLights();
+        this.ui.showToast(on ? '💡 Searchlights On' : 'Searchlights Off');
+        return on;
+      },
+      onToggleAutopilot: () => {
+        this.autopilot = !this.autopilot;
+        this.ui.showToast(this.autopilot ? '⚓ Autopilot Full Ahead' : '⚓ Manual Helm Engaged');
+        return this.autopilot;
       },
       onHorn: () => {
         this.audio.playFogHorn();
@@ -121,6 +145,21 @@ class App {
       if (e.key === 'h' || e.key === 'H') {
         this.audio.playFogHorn();
         this.ui.showToast('📯 Fog Horn Sounded');
+      }
+      if (e.key === 'l' || e.key === 'L') {
+        const on = this.ship.toggleLights();
+        this.ui.showToast(on ? '💡 Searchlights On' : 'Searchlights Off');
+        const btn = document.getElementById('lightsBtn');
+        if (btn) btn.style.color = on ? '#ffdd44' : 'var(--text-muted)';
+      }
+      if (e.key === 'c' || e.key === 'C') {
+        this.autopilot = !this.autopilot;
+        this.ui.showToast(this.autopilot ? '⚓ Autopilot Full Ahead' : '⚓ Manual Helm Engaged');
+        const btn = document.getElementById('cruiseBtn');
+        if (btn) {
+          btn.style.color = this.autopilot ? '#00ff88' : 'var(--text-muted)';
+          btn.style.borderColor = this.autopilot ? '#00ff88' : 'var(--glass-border)';
+        }
       }
       if (e.key === '1') this.setCamera('chase');
       if (e.key === '2') this.setCamera('bridge');
@@ -194,6 +233,11 @@ class App {
     if (this.keys['s'] || this.keys['arrowdown']) throttleInput -= 0.6;
     if (this.keys['a'] || this.keys['arrowleft']) rudderInput -= 1.0;
     if (this.keys['d'] || this.keys['arrowright']) rudderInput += 1.0;
+
+    // Autopilot cruise mode holds full throttle
+    if (this.autopilot) {
+      throttleInput = 1.0;
+    }
 
     // Merge touch inputs if active
     if (this.touchThrottle !== 0) throttleInput = this.touchThrottle;
@@ -296,16 +340,21 @@ class App {
     const isStorm = this.weather.currentPreset.id === 'storm';
     this.particles.update(dt, this.ship.group, this.physics, isStorm);
 
-    // 7. Update Procedural Audio
+    // 7. Update Navigation Buoys, Seagull Flock, and Drifting Clouds
+    this.buoys.update(dt, this.time, this.weather.currentPreset.waveScale, this.ship.group.position);
+    this.seagulls.update(dt, this.time, this.ship.group.position);
+    this.clouds.update(dt, this.time, this.ship.group.position);
+
+    // 8. Update Procedural Audio
     this.audio.update(dt, this.physics.throttle, this.physics.speedKnots, this.weather.currentPreset.windSpeedKnots);
 
-    // 8. Update Camera Position & Target
+    // 9. Update Camera Position & Target
     this.updateCamera(dt);
 
-    // 9. Update Glassmorphic Telemetry HUD
+    // 10. Update Glassmorphic Telemetry HUD
     this.ui.update(this.physics, this.weather.currentPreset);
 
-    // 10. Render frame
+    // 11. Render frame
     this.renderer.render(this.scene, this.camera);
   }
 
