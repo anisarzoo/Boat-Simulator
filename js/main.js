@@ -107,12 +107,12 @@ class App {
       },
       onToggleLights: () => {
         const on = this.ship.toggleLights();
-        this.ui.showToast(on ? '💡 Searchlights On' : 'Searchlights Off');
+        this.ui.showToast(on ? 'Searchlights On' : 'Searchlights Off');
         return on;
       },
       onToggleAutopilot: () => {
         this.autopilot = !this.autopilot;
-        this.ui.showToast(this.autopilot ? '⚓ Autopilot Full Ahead' : '⚓ Manual Helm Engaged');
+        this.ui.showToast(this.autopilot ? 'Autopilot Full Ahead' : 'Manual Helm Engaged');
         return this.autopilot;
       },
       onHorn: () => {
@@ -144,22 +144,23 @@ class App {
       // Quick key shortcuts
       if (e.key === 'h' || e.key === 'H') {
         this.audio.playFogHorn();
-        this.ui.showToast('📯 Fog Horn Sounded');
+        this.ui.showToast('Fog Horn Sounded');
       }
       if (e.key === 'l' || e.key === 'L') {
         const on = this.ship.toggleLights();
-        this.ui.showToast(on ? '💡 Searchlights On' : 'Searchlights Off');
+        this.ui.showToast(on ? 'Searchlights On' : 'Searchlights Off');
         const btn = document.getElementById('lightsBtn');
-        if (btn) btn.style.color = on ? '#ffdd44' : 'var(--text-muted)';
+        if (btn) btn.classList.toggle('active', on);
       }
       if (e.key === 'c' || e.key === 'C') {
         this.autopilot = !this.autopilot;
-        this.ui.showToast(this.autopilot ? '⚓ Autopilot Full Ahead' : '⚓ Manual Helm Engaged');
+        this.ui.showToast(this.autopilot ? 'Autopilot Full Ahead' : 'Manual Helm Engaged');
         const btn = document.getElementById('cruiseBtn');
-        if (btn) {
-          btn.style.color = this.autopilot ? '#00ff88' : 'var(--text-muted)';
-          btn.style.borderColor = this.autopilot ? '#00ff88' : 'var(--glass-border)';
-        }
+        if (btn) btn.classList.toggle('active', this.autopilot);
+      }
+      if (e.key === 'u' || e.key === 'U') {
+        const hudToggleBtn = document.getElementById('hudToggleBtn');
+        if (hudToggleBtn) hudToggleBtn.click();
       }
       if (e.key === '1') this.setCamera('chase');
       if (e.key === '2') this.setCamera('bridge');
@@ -174,6 +175,7 @@ class App {
       }
       if (e.key === 'm' || e.key === 'M') {
         const isMuted = this.audio.toggleMute();
+        this.ui.setAudioIcon(isMuted);
         this.ui.showToast(isMuted ? 'Audio Muted' : 'Audio Enabled');
       }
     });

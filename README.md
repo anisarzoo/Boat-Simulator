@@ -4,7 +4,7 @@ An interactive, high-performance 3D maritime simulator built with **Three.js**, 
 
 ---
 
-## 🌊 Key Features
+## Key Features
 
 - **Gerstner Wave Math & Micro-Ripple Shader:**
   - Multi-octave Gerstner ocean swells combined with analytical high-frequency micro-ripples.
@@ -30,10 +30,10 @@ An interactive, high-performance 3D maritime simulator built with **Three.js**, 
   - Warm deck courtesy lights and illuminated bridge navigation screens.
 
 - **Atmospheric Weather Presets:**
-  - **☀️ Tropical Noon:** Bright sun, crystal-clear turquoise waters, gentle swells.
-  - **🌅 Golden Hour (Sunset):** Rich amber/orange sky, long sun glints, moderate swells.
-  - **⛈️ Midnight Tempest (Storm):** Dark churning 5m swells, heavy rain particles, howling gale winds, and lightning flashes.
-  - **✨ Bioluminescent Night (Aurora):** Emerald/cyan glowing wake trails, calm mystical ocean, 1,800 twinkling stars, and glowing full moon.
+  - **Tropical Noon:** Bright sun, crystal-clear turquoise waters, gentle swells.
+  - **Golden Hour (Sunset):** Rich amber/orange sky, long sun glints, moderate swells.
+  - **Midnight Tempest (Storm):** Dark churning 5m swells, heavy rain particles, howling gale winds, and lightning flashes.
+  - **Bioluminescent Night (Aurora):** Emerald/cyan glowing wake trails, calm mystical ocean, 1,800 twinkling stars, and glowing full moon.
 
 - **Procedural Audio Engine (Web Audio API):**
   - Synthesized dual-oscillator marine diesel engine sound pitch-shifting with throttle and speed.
@@ -41,7 +41,10 @@ An interactive, high-performance 3D maritime simulator built with **Three.js**, 
   - Procedural water hull rush and ocean breeze.
   - Deep harmonic maritime fog horn (`H` key).
 
-- **Glassmorphic Telemetry HUD:**
+- **Minimalist Glassmorphic Telemetry HUD:**
+  - Crisp SVG iconography with zero emojis for a clean, professional aesthetic.
+  - Collapsible Atmosphere and Camera perspective drawers to prevent screen clutter.
+  - Collapsible bottom telemetry dashboard (toggle with `U` key or HUD button).
   - Marine Radar PPI scope with real-time range rings, crosshairs, and scanning sweep.
   - Digital Speedometer log (Knots).
   - Gyro Compass with heading in nautical degrees & cardinal directions.
@@ -54,7 +57,7 @@ An interactive, high-performance 3D maritime simulator built with **Three.js**, 
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 No build steps required. Simply serve the directory with any local static HTTP server:
 
@@ -70,26 +73,27 @@ Open `http://localhost:8080` in any modern web browser.
 
 ---
 
-## 🎮 Controls
+## Controls
 
-| Action | Keyboard | Touch / Mouse |
+| Action | Keyboard | UI / Mouse |
 | :--- | :--- | :--- |
-| **Throttle Forward / Reverse** | `W` / `S` or `↑` / `↓` | On-Screen ▲ / ▼ Buttons |
-| **Rudder Port / Starboard** | `A` / `D` or `←` / `→` | On-Screen ◀ / ▶ Buttons |
-| **Autopilot Cruise (Full Ahead)** | `C` | Click ⚓ Cruise Button |
-| **Toggle Searchlights** | `L` | Click 💡 Lights Button |
-| **Sound Fog Horn** | `H` | Click 📯 Horn Button |
-| **Toggle Audio** | `M` | Click 🔊 Audio Button |
-| **Toggle Fullscreen** | `F` | Click ⛶ Fullscreen Button |
-| **Camera Viewports** | `1`, `2`, `3`, `4` | Click Camera Dock |
+| **Throttle Forward / Reverse** | `W` / `S` or `Up` / `Down` | On-Screen Levers |
+| **Rudder Port / Starboard** | `A` / `D` or `Left` / `Right` | On-Screen Rudder Buttons |
+| **Autopilot Cruise (Full Ahead)** | `C` | Cruise Icon Button |
+| **Toggle Searchlights** | `L` | Lights Icon Button |
+| **Sound Fog Horn** | `H` | Horn Icon Button |
+| **Toggle Audio** | `M` | Audio Icon Button |
+| **Toggle Fullscreen** | `F` | Fullscreen Icon Button |
+| **Toggle Minimal HUD** | `U` | Eye/HUD Icon Button |
+| **Camera Perspectives** | `1`, `2`, `3`, `4` | Camera Dropdown Drawer |
 | **Orbit Camera** | Left Mouse Drag | Touch Drag on Viewport |
 | **Zoom In / Out** | Mouse Wheel | - |
 
 ---
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 - **Graphics:** [Three.js](https://threejs.org/) (r169)
 - **Shaders:** GLSL (Gerstner waves, micro-normals, fresnel reflections, foam noise, sky dome)
 - **Audio:** Web Audio API (`AudioContext`, `OscillatorNode`, `BiquadFilterNode`)
-- **UI:** Modern CSS Glassmorphism (`backdrop-filter`) & Vanilla JavaScript (ES Modules)
+- **UI:** Modern CSS Glassmorphism (`backdrop-filter`), SVG Icons & Vanilla JavaScript (ES Modules)

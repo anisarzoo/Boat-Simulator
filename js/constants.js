@@ -14,7 +14,6 @@ export const WEATHER_PRESETS = {
   sunny: {
     id: 'sunny',
     name: 'Tropical Noon',
-    icon: '☀️',
     skyTopColor: 0x1e6bb8,
     skyHorizonColor: 0x8ec8f2,
     sunColor: 0xfffaed,
@@ -40,7 +39,6 @@ export const WEATHER_PRESETS = {
   sunset: {
     id: 'sunset',
     name: 'Golden Hour',
-    icon: '🌅',
     skyTopColor: 0x1d1536,     // Twilight deep purple
     skyHorizonColor: 0xff6622, // Glowing crimson amber
     sunColor: 0xff8833,        // Rich golden orange
@@ -66,7 +64,6 @@ export const WEATHER_PRESETS = {
   storm: {
     id: 'storm',
     name: 'Midnight Tempest',
-    icon: '⛈️',
     skyTopColor: 0x05080c,
     skyHorizonColor: 0x141d28,
     sunColor: 0x5a7088,
@@ -92,7 +89,6 @@ export const WEATHER_PRESETS = {
   aurora: {
     id: 'aurora',
     name: 'Bioluminescent Night',
-    icon: '✨',
     skyTopColor: 0x010811,
     skyHorizonColor: 0x041924,
     sunColor: 0x112233,

@@ -1,4 +1,4 @@
-// Glassmorphic HUD & Telemetry UI Controller
+// Clean Minimalist HUD Controller (No emojis, Collapsible Popovers, SVG Icons)
 export class UIController {
   constructor(callbacks = {}) {
     this.callbacks = callbacks;
@@ -20,10 +20,17 @@ export class UIController {
       pitchVal: document.getElementById('pitchVal'),
       toast: document.getElementById('toast'),
       muteBtn: document.getElementById('muteBtn'),
+      audioIcon: document.getElementById('audioIcon'),
       hornBtn: document.getElementById('hornBtn'),
       fsBtn: document.getElementById('fsBtn'),
       lightsBtn: document.getElementById('lightsBtn'),
       cruiseBtn: document.getElementById('cruiseBtn'),
+      hudToggleBtn: document.getElementById('hudToggleBtn'),
+      bottomDashboard: document.getElementById('bottomDashboard'),
+      weatherToggleBtn: document.getElementById('weatherToggleBtn'),
+      weatherDrawer: document.getElementById('weatherDrawer'),
+      camToggleBtn: document.getElementById('camToggleBtn'),
+      camDrawer: document.getElementById('camDrawer'),
       fpsVal: document.getElementById('fpsVal'),
       weatherButtons: document.querySelectorAll('.weather-btn'),
       cameraButtons: document.querySelectorAll('.cam-btn'),
@@ -37,64 +44,91 @@ export class UIController {
   }
 
   initEvents() {
-    // Weather preset buttons
+    // 1. Collapsible Weather Drawer
+    if (this.dom.weatherToggleBtn && this.dom.weatherDrawer) {
+      this.dom.weatherToggleBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.dom.camDrawer.classList.remove('open');
+        this.dom.weatherDrawer.classList.toggle('open');
+      });
+    }
+
+    // 2. Collapsible Camera Drawer
+    if (this.dom.camToggleBtn && this.dom.camDrawer) {
+      this.dom.camToggleBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.dom.weatherDrawer.classList.remove('open');
+        this.dom.camDrawer.classList.toggle('open');
+      });
+    }
+
+    // Close drawers on outside click
+    document.addEventListener('click', () => {
+      if (this.dom.weatherDrawer) this.dom.weatherDrawer.classList.remove('open');
+      if (this.dom.camDrawer) this.dom.camDrawer.classList.remove('open');
+    });
+
+    // 3. Weather Preset Selection
     this.dom.weatherButtons.forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
         const weatherId = btn.dataset.weather;
         this.dom.weatherButtons.forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
+        if (this.dom.weatherDrawer) this.dom.weatherDrawer.classList.remove('open');
         if (this.callbacks.onWeatherChange) {
           const preset = this.callbacks.onWeatherChange(weatherId);
-          if (preset) this.showToast(`${preset.icon} Weather: ${preset.name}`);
+          if (preset) this.showToast(`Atmosphere: ${preset.name}`);
         }
       });
     });
 
-    // Camera mode buttons
+    // 4. Camera Perspectives Selection
     this.dom.cameraButtons.forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
         const camMode = btn.dataset.cam;
         this.dom.cameraButtons.forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
+        if (this.dom.camDrawer) this.dom.camDrawer.classList.remove('open');
         if (this.callbacks.onCameraChange) {
           this.callbacks.onCameraChange(camMode);
-          this.showToast(`🎥 Camera: ${btn.textContent.trim()}`);
+          this.showToast(`Camera: ${btn.textContent.trim()}`);
         }
       });
     });
 
-    // Lights toggle button
+    // 5. Searchlights Button
     if (this.dom.lightsBtn) {
       this.dom.lightsBtn.addEventListener('click', () => {
         if (this.callbacks.onToggleLights) {
           const isOn = this.callbacks.onToggleLights();
-          this.dom.lightsBtn.style.color = isOn ? '#ffdd44' : 'var(--text-muted)';
+          this.dom.lightsBtn.classList.toggle('active', isOn);
         }
       });
     }
 
-    // Cruise control autopilot button
+    // 6. Autopilot Cruise Button
     if (this.dom.cruiseBtn) {
       this.dom.cruiseBtn.addEventListener('click', () => {
         if (this.callbacks.onToggleAutopilot) {
           const isCruise = this.callbacks.onToggleAutopilot();
-          this.dom.cruiseBtn.style.color = isCruise ? '#00ff88' : 'var(--text-muted)';
-          this.dom.cruiseBtn.style.borderColor = isCruise ? '#00ff88' : 'var(--glass-border)';
+          this.dom.cruiseBtn.classList.toggle('active', isCruise);
         }
       });
     }
 
-    // Fog Horn button
+    // 7. Fog Horn Button
     if (this.dom.hornBtn) {
       this.dom.hornBtn.addEventListener('click', () => {
         if (this.callbacks.onHorn) {
           this.callbacks.onHorn();
-          this.showToast('📯 Fog Horn Sounded');
+          this.showToast('Fog Horn Sounded');
         }
       });
     }
 
-    // Fullscreen button
+    // 8. Fullscreen Button
     if (this.dom.fsBtn) {
       this.dom.fsBtn.addEventListener('click', () => {
         if (!document.fullscreenElement) {
@@ -103,21 +137,52 @@ export class UIController {
           document.exitFullscreen().catch(() => {});
         }
       });
+
+      document.addEventListener('fullscreenchange', () => {
+        this.dom.fsBtn.classList.toggle('active', !!document.fullscreenElement);
+      });
     }
 
-    // Audio Mute button
+    // 9. Hide / Show HUD Display
+    if (this.dom.hudToggleBtn && this.dom.bottomDashboard) {
+      this.dom.hudToggleBtn.addEventListener('click', () => {
+        const isCollapsed = this.dom.bottomDashboard.classList.toggle('collapsed');
+        this.dom.hudToggleBtn.classList.toggle('active', isCollapsed);
+        this.showToast(isCollapsed ? 'HUD Minimized' : 'HUD Restored');
+      });
+    }
+
+    // 10. Audio Mute Toggle Button
     if (this.dom.muteBtn) {
       this.dom.muteBtn.addEventListener('click', () => {
         if (this.callbacks.onToggleMute) {
           const isMuted = this.callbacks.onToggleMute();
-          this.dom.muteBtn.innerHTML = isMuted ? '🔇 Unmute' : '🔊 Audio On';
+          this.setAudioIcon(isMuted);
           this.showToast(isMuted ? 'Audio Muted' : 'Audio Enabled');
         }
       });
     }
 
-    // Mobile touch controls
     this.initTouchControls();
+  }
+
+  setAudioIcon(isMuted) {
+    if (!this.dom.audioIcon) return;
+    if (isMuted) {
+      this.dom.audioIcon.innerHTML = `
+        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+        <line x1="22" y1="9" x2="16" y2="15"></line>
+        <line x1="16" y1="9" x2="22" y2="15"></line>
+      `;
+      this.dom.muteBtn.classList.remove('active');
+    } else {
+      this.dom.audioIcon.innerHTML = `
+        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+        <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+        <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+      `;
+      this.dom.muteBtn.classList.add('active');
+    }
   }
 
   initTouchControls() {
@@ -157,7 +222,7 @@ export class UIController {
     clearTimeout(this.toastTimer);
     this.toastTimer = setTimeout(() => {
       this.dom.toast.classList.remove('show');
-    }, 2400);
+    }, 2200);
   }
 
   update(physics, weather) {
@@ -186,7 +251,7 @@ export class UIController {
     const rudderSide = rudderDeg < 0 ? 'PORT' : (rudderDeg > 0 ? 'STBD' : 'MID');
     this.dom.rudderVal.textContent = `${Math.abs(rudderDeg)}° ${rudderSide}`;
     if (this.dom.rudderIndicator) {
-      this.dom.rudderIndicator.style.transform = `translateX(${physics.rudder * 35}px)`;
+      this.dom.rudderIndicator.style.transform = `translateX(${physics.rudder * 32}px)`;
     }
 
     // Sea State
