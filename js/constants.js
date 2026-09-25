@@ -92,7 +92,7 @@ export const WEATHER_PRESETS = {
     waveScale: 2.2,
     windSpeedKnots: 48,
     fogColor: 0x0c141d,
-    fogDensity: 0.0035,
+    fogDensity: 0.0018,
     starsOpacity: 0.1,
     rain: true,
     lightning: true,

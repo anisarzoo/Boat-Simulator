@@ -212,19 +212,19 @@ export class Archipelago {
 
     // Incandescent filament / arc core
     const fresnelCore = new THREE.Mesh(
-      new THREE.SphereGeometry(1.4, 24, 24),
-      new THREE.MeshBasicMaterial({ color: 0xfffff2 })
+      new THREE.SphereGeometry(1.6, 24, 24),
+      new THREE.MeshBasicMaterial({ color: 0xffffff })
     );
     fresnelCore.position.y = lanternY;
     group.add(fresnelCore);
 
-    // Warm radiant lantern flare halo (golden incandescent beacon bloom)
+    // Warm radiant lantern flare halo (golden incandescent beacon bloom visible miles away)
     const lensHalo = new THREE.Mesh(
-      new THREE.SphereGeometry(3.6, 24, 24),
+      new THREE.SphereGeometry(5.2, 24, 24),
       new THREE.MeshBasicMaterial({
-        color: 0xffd988,
+        color: 0xffe299,
         transparent: true,
-        opacity: 0.55,
+        opacity: 0.8,
         blending: THREE.AdditiveBlending
       })
     );
@@ -233,19 +233,19 @@ export class Archipelago {
 
     // Outer atmospheric fog dispersal halo around lantern room
     const outerHalo = new THREE.Mesh(
-      new THREE.SphereGeometry(6.8, 16, 16),
+      new THREE.SphereGeometry(14.0, 16, 16),
       new THREE.MeshBasicMaterial({
-        color: 0xffb855,
+        color: 0xffb844,
         transparent: true,
-        opacity: 0.22,
+        opacity: 0.35,
         blending: THREE.AdditiveBlending
       })
     );
     outerHalo.position.y = lanternY;
     group.add(outerHalo);
 
-    // Omnidirectional lantern glow light (illuminates tower & gallery)
-    const lanternPoint = new THREE.PointLight(0xffdf95, 6.5, 120, 1.1);
+    // High-power omnidirectional lantern light (illuminates tower & stormy sea around island)
+    const lanternPoint = new THREE.PointLight(0xffe290, 8.5, 280, 1.0);
     lanternPoint.position.y = lanternY;
     group.add(lanternPoint);
 
@@ -253,107 +253,120 @@ export class Archipelago {
     const beamPivot = new THREE.Group();
     beamPivot.position.set(0, lanternY, 0);
 
-    const beamLength = 360.0;
-    const rStart = 1.35; // Narrow at lantern aperture
-    const rEnd = 30.0;   // Naturally expands into the sea mist
+    // 860m maritime sweep: reaches all the way across the archipelago and over the player's vessel
+    const beamLength = 860.0;
+    const rStart = 1.6;
+    const rEnd = 52.0;
+
+    this.beamMaterials = [];
 
     // Advanced volumetric light beam shader:
-    // 1. Naturally EXPANDS outward from lantern aperture into the ocean
-    // 2. FADES smoothly with distance (Beer-Lambert atmospheric attenuation + smooth end feathering)
-    // 3. Dense, solid, glowing core with soft Gaussian radial edge falloff (NO hollow shell)
-    // 4. Mie forward-scattering enhancement when looking along beam
-    const createBeamMaterial = (opacityVal, coreConcentration) => new THREE.ShaderMaterial({
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      side: THREE.DoubleSide,
-      uniforms: {
-        uLength: { value: beamLength },
-        uRadiusStart: { value: rStart },
-        uRadiusEnd: { value: rEnd },
-        uOpacity: { value: opacityVal },
-        uCoreConcentration: { value: coreConcentration }
-      },
-      vertexShader: `
-        varying vec3 vLocalPos;
-        varying vec3 vWorldPos;
-        varying vec3 vViewDir;
-        varying vec3 vNormal;
+    // 1. Naturally EXPANDS outward from lantern aperture across the entire ocean
+    // 2. Continuous solid optical density with Gaussian falloff (no hollow shell)
+    // 3. Gentle Beer-Lambert atmospheric attenuation with smooth end feathering
+    // 4. Dynamic storm boost: dramatically cuts through tempest rain and dark clouds
+    const createBeamMaterial = (opacityVal, coreConcentration) => {
+      const mat = new THREE.ShaderMaterial({
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+        uniforms: {
+          uLength: { value: beamLength },
+          uRadiusStart: { value: rStart },
+          uRadiusEnd: { value: rEnd },
+          uOpacity: { value: opacityVal },
+          uCoreConcentration: { value: coreConcentration },
+          uStormBoost: { value: 1.0 }
+        },
+        vertexShader: `
+          varying vec3 vLocalPos;
+          varying vec3 vWorldPos;
+          varying vec3 vViewDir;
+          varying vec3 vNormal;
 
-        void main() {
-          vLocalPos = position;
-          vec4 worldPos = modelMatrix * vec4(position, 1.0);
-          vWorldPos = worldPos.xyz;
-          vNormal = normalize(mat3(modelMatrix) * normal);
-          vViewDir = normalize(cameraPosition - worldPos.xyz);
-          gl_Position = projectionMatrix * viewMatrix * worldPos;
-        }
-      `,
-      fragmentShader: `
-        uniform float uLength;
-        uniform float uRadiusStart;
-        uniform float uRadiusEnd;
-        uniform float uOpacity;
-        uniform float uCoreConcentration;
+          void main() {
+            vLocalPos = position;
+            vec4 worldPos = modelMatrix * vec4(position, 1.0);
+            vWorldPos = worldPos.xyz;
+            vNormal = normalize(mat3(modelMatrix) * normal);
+            vViewDir = normalize(cameraPosition - worldPos.xyz);
+            gl_Position = projectionMatrix * viewMatrix * worldPos;
+          }
+        `,
+        fragmentShader: `
+          uniform float uLength;
+          uniform float uRadiusStart;
+          uniform float uRadiusEnd;
+          uniform float uOpacity;
+          uniform float uCoreConcentration;
+          uniform float uStormBoost;
 
-        varying vec3 vLocalPos;
-        varying vec3 vWorldPos;
-        varying vec3 vViewDir;
-        varying vec3 vNormal;
+          varying vec3 vLocalPos;
+          varying vec3 vWorldPos;
+          varying vec3 vViewDir;
+          varying vec3 vNormal;
 
-        void main() {
-          // Longitudinal progress along the beam (0.0 at lantern, 1.0 at far end)
-          float t = clamp(vLocalPos.z / uLength, 0.0, 1.0);
+          void main() {
+            // Longitudinal progress along the beam (0.0 at lantern, 1.0 at far ocean reach)
+            float t = clamp(vLocalPos.z / uLength, 0.0, 1.0);
 
-          // Atmospheric extinction / Beer-Lambert distance fade
-          // Dazzlingly intense at lantern, exponentially decaying with distance
-          float distFade = exp(-2.3 * t);
-          // Quadratic end-feathering to 0.0 so there is never an abrupt geometry cutoff
-          float endFeather = (1.0 - t * t);
-          // Intense focal boost right at the lantern aperture
-          float sourceBoost = 1.0 + 3.8 * exp(-24.0 * t);
-          float longitudinal = distFade * endFeather * sourceBoost;
+            // Atmospheric extinction / Beer-Lambert distance fade (tuned for 800m+ maritime reach)
+            float distFade = exp(-1.12 * t);
+            // Quadratic end-feathering so beam dissolves seamlessly into distant horizon
+            float endFeather = (1.0 - t * t);
+            // Intense focal radiance near the lantern aperture
+            float sourceBoost = 1.0 + 3.4 * exp(-18.0 * t);
+            float longitudinal = distFade * endFeather * sourceBoost;
 
-          // Radius of the expanding beam at distance z
-          float radiusAtZ = mix(uRadiusStart, uRadiusEnd, t);
-          float radialDist = length(vLocalPos.xy);
-          float rho = clamp(radialDist / max(radiusAtZ, 0.01), 0.0, 1.0);
+            // Radius of the expanding beam at distance z
+            float radiusAtZ = mix(uRadiusStart, uRadiusEnd, t);
+            float radialDist = length(vLocalPos.xy);
+            float rho = clamp(radialDist / max(radiusAtZ, 0.01), 0.0, 1.0);
 
-          // Volumetric Gaussian radial profile: solid, bright core, softly feathering to perimeter
-          float coreGlow = exp(-uCoreConcentration * rho * rho);
-          float softEdge = smoothstep(1.0, 0.28, rho);
-          float radialProfile = coreGlow * softEdge;
+            // Volumetric profile: solid optical core blended with smooth Gaussian edge
+            float coreGlow = exp(-uCoreConcentration * rho * rho);
+            float solidBase = max(0.0, 1.0 - rho * rho);
+            float softEdge = smoothstep(1.0, 0.18, rho);
+            float radialProfile = mix(coreGlow, solidBase, 0.42) * softEdge;
 
-          // Forward Mie scattering (beam looks brighter when looking toward the lighthouse)
-          vec3 beamDir = normalize(mat3(modelMatrix) * vec3(0.0, 0.0, 1.0));
-          float forwardScatter = pow(max(0.0, dot(vViewDir, -beamDir)), 3.0) * 0.4 + 0.65;
+            // Forward Mie scattering (beam looks intensely radiant when aimed near the observer)
+            vec3 beamDir = normalize(mat3(modelMatrix) * vec3(0.0, 0.0, 1.0));
+            float forwardScatter = pow(max(0.0, dot(vViewDir, -beamDir)), 2.8) * 0.45 + 0.65;
 
-          // Thickness accumulation when viewing through the cone volume
-          float cosAngle = abs(dot(vNormal, vViewDir));
-          float depthWeight = mix(0.55, 1.0, sqrt(max(0.0, 1.0 - cosAngle * cosAngle)));
+            // View-angle thickness accumulation: reinforces solid presence from all camera angles
+            float cosAngle = abs(dot(vNormal, vViewDir));
+            float depthWeight = mix(0.72, 1.18, sqrt(max(0.0, 1.0 - cosAngle * cosAngle)));
 
-          // Realistic incandescent color gradient (white-hot core -> golden amber beam -> warm fog scatter)
-          vec3 coreColor = vec3(1.0, 0.98, 0.92);
-          vec3 amberBeam = vec3(1.0, 0.85, 0.58);
-          vec3 fogScatter = vec3(0.96, 0.72, 0.42);
+            // Realistic maritime incandescent color gradient (white-hot core -> golden amber -> warm fog haze)
+            vec3 coreColor = vec3(1.0, 0.98, 0.93);
+            vec3 amberBeam = vec3(1.0, 0.88, 0.62);
+            vec3 fogScatter = vec3(0.96, 0.76, 0.48);
 
-          vec3 finalColor = mix(coreColor, amberBeam, clamp(rho * 1.35 + t * 0.45, 0.0, 1.0));
-          finalColor = mix(finalColor, fogScatter, clamp(t * 0.75, 0.0, 1.0));
+            vec3 finalColor = mix(coreColor, amberBeam, clamp(rho * 1.25 + t * 0.4, 0.0, 1.0));
+            finalColor = mix(finalColor, fogScatter, clamp(t * 0.7, 0.0, 1.0));
 
-          float alpha = uOpacity * longitudinal * radialProfile * forwardScatter * depthWeight;
-          if (alpha < 0.001) discard;
+            float alpha = uOpacity * uStormBoost * longitudinal * radialProfile * forwardScatter * depthWeight;
+            if (alpha < 0.001) discard;
 
-          gl_FragColor = vec4(finalColor, alpha);
-        }
-      `
-    });
+            gl_FragColor = vec4(finalColor, alpha);
+          }
+        `
+      });
+      this.beamMaterials.push(mat);
+      return mat;
+    };
 
-    // Material 1: Outer atmospheric fog scatter cone
-    const outerBeamMat = createBeamMaterial(0.24, 3.2);
-    // Material 2: Inner concentrated hot core beam
-    const innerCoreMat = createBeamMaterial(0.42, 6.5);
+    // Layer 1: Dense inner blazing core
+    const coreBeamMat = createBeamMaterial(0.78, 5.0);
+    // Layer 2: Main dense beam body
+    const midBeamMat = createBeamMaterial(0.52, 2.8);
+    // Layer 3: Outer atmospheric fog scatter shroud
+    const outerBeamMat = createBeamMaterial(0.28, 1.6);
+    // Layer 4: Interior axial cross-fins (ensures central line is 100% solid from any side angle)
+    const finMat = createBeamMaterial(0.68, 3.2);
 
-    // Geometry: Cylinder expanding from rStart at Z=0 to rEnd at Z=beamLength
+    // Cylindrical expanding shell generator
     const createExpandingConeGeo = (radiusStart, radiusEnd, length) => {
       const geo = new THREE.CylinderGeometry(radiusStart, radiusEnd, length, 32, 24, true);
       geo.rotateX(-Math.PI / 2);
@@ -361,29 +374,74 @@ export class Archipelago {
       return geo;
     };
 
-    const outerGeo = createExpandingConeGeo(rStart, rEnd, beamLength);
-    const innerGeo = createExpandingConeGeo(rStart * 0.65, rEnd * 0.48, beamLength * 0.95);
+    // Interior axial cross-fin geometry (vertical and horizontal quad fins along centerline)
+    const createAxialCrossGeo = (radiusStart, radiusEnd, length, segments = 20) => {
+      const geo = new THREE.BufferGeometry();
+      const positions = [];
+      const indices = [];
+
+      for (let i = 0; i <= segments; i++) {
+        const t = i / segments;
+        const z = t * length;
+        const r = radiusStart + (radiusEnd - radiusStart) * t;
+
+        // Vertices 0 & 1: Vertical fin (X=0)
+        positions.push(0, r, z);
+        positions.push(0, -r, z);
+        // Vertices 2 & 3: Horizontal fin (Y=0)
+        positions.push(r, 0, z);
+        positions.push(-r, 0, z);
+
+        if (i < segments) {
+          const b = i * 4;
+          // Vertical fin quad (double-sided via 2 triangles)
+          indices.push(b, b + 1, b + 5);
+          indices.push(b, b + 5, b + 4);
+          // Horizontal fin quad
+          indices.push(b + 2, b + 3, b + 7);
+          indices.push(b + 2, b + 7, b + 6);
+        }
+      }
+
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      geo.setIndex(indices);
+      geo.computeVertexNormals();
+      return geo;
+    };
+
+    const coreGeo = createExpandingConeGeo(rStart * 0.65, rEnd * 0.38, beamLength * 0.98);
+    const midGeo = createExpandingConeGeo(rStart, rEnd * 0.72, beamLength);
+    const outerGeo = createExpandingConeGeo(rStart * 1.6, rEnd, beamLength);
+    const crossFinGeo = createAxialCrossGeo(rStart * 0.8, rEnd * 0.55, beamLength * 0.96);
 
     for (const angle of [0, Math.PI]) {
       const beamGroup = new THREE.Group();
       beamGroup.rotation.y = angle;
-      // Authentic 1.8° downward pitch toward the sea horizon
-      beamGroup.rotation.x = 0.032;
+      // Authentic 1.5° downward pitch toward the ocean horizon
+      beamGroup.rotation.x = 0.026;
 
-      // Outer atmospheric fog cone
+      // 1. Interior axial cross-fins for solid volumetric core
+      const finMesh = new THREE.Mesh(crossFinGeo, finMat);
+      beamGroup.add(finMesh);
+
+      // 2. Dense white-hot inner core
+      const coreMesh = new THREE.Mesh(coreGeo, coreBeamMat);
+      beamGroup.add(coreMesh);
+
+      // 3. Main golden beam body
+      const midMesh = new THREE.Mesh(midGeo, midBeamMat);
+      beamGroup.add(midMesh);
+
+      // 4. Outer misty dispersion shroud
       const outerMesh = new THREE.Mesh(outerGeo, outerBeamMat);
       beamGroup.add(outerMesh);
 
-      // Inner intense core beam
-      const innerMesh = new THREE.Mesh(innerGeo, innerCoreMat);
-      beamGroup.add(innerMesh);
-
-      // Spotlight for direct ocean surface illumination
-      const spot = new THREE.SpotLight(0xffeed0, 9.0, 520, Math.PI / 16, 0.8, 1.15);
+      // 5. Long-range spotlight for ocean wave illumination
+      const spot = new THREE.SpotLight(0xffeed0, 22.0, 950, Math.PI / 14, 0.7, 1.05);
       spot.position.set(0, 0, 0);
 
       const target = new THREE.Object3D();
-      target.position.set(0, -18.0, 320.0);
+      target.position.set(0, -22.0, 650.0);
       beamGroup.add(target);
       spot.target = target;
       beamGroup.add(spot);
@@ -398,10 +456,23 @@ export class Archipelago {
     this.scene.add(group);
   }
 
-  update(dt) {
-    // Continuous 360° sweeping Fresnel lighthouse rotation (12 RPM)
+  update(dt, weatherPreset = null) {
+    // Continuous 360° sweeping Fresnel lighthouse rotation (10.5 RPM)
     if (this.lighthouseTower) {
-      this.lighthouseTower.rotation.y += 0.85 * dt;
+      this.lighthouseTower.rotation.y += 0.72 * dt;
+    }
+
+    // Dynamic storm & darkness volumetric boost: in tempest / night, light scatters more solidly through mist
+    if (this.beamMaterials && this.beamMaterials.length > 0) {
+      const isStorm = weatherPreset && weatherPreset.id === 'storm';
+      const isNight = weatherPreset && (weatherPreset.id === 'aurora' || weatherPreset.id === 'sunset');
+      const targetBoost = isStorm ? 1.65 : (isNight ? 1.35 : 1.0);
+
+      for (const mat of this.beamMaterials) {
+        if (mat.uniforms && mat.uniforms.uStormBoost) {
+          mat.uniforms.uStormBoost.value = THREE.MathUtils.lerp(mat.uniforms.uStormBoost.value, targetBoost, Math.min(1.0, 4.0 * dt));
+        }
+      }
     }
   }
 
