@@ -101,42 +101,130 @@ export class ParticleSystem {
   }
 
   initRain() {
+    this.rainCount = 16000;
     const rainGeo = new THREE.BufferGeometry();
-    const rainPositions = new Float32Array(this.rainCount * 3);
+    const positions = new Float32Array(this.rainCount * 2 * 3);
+    const tails = new Float32Array(this.rainCount * 2);
+    const speeds = new Float32Array(this.rainCount * 2);
+    const lengths = new Float32Array(this.rainCount * 2);
+
+    const boxW = 85;
+    const boxH = 48;
+    const boxD = 85;
 
     for (let i = 0; i < this.rainCount; i++) {
-      rainPositions[i * 3] = (Math.random() - 0.5) * 140;
-      rainPositions[i * 3 + 1] = Math.random() * 70;
-      rainPositions[i * 3 + 2] = (Math.random() - 0.5) * 140;
+      const bx = (Math.random() - 0.5) * boxW;
+      const by = Math.random() * boxH;
+      const bz = (Math.random() - 0.5) * boxD;
+
+      const speed = 0.82 + Math.random() * 0.36; // Individual terminal velocity variation
+      const len = 1.3 + Math.random() * 1.5;      // Realistic motion-blurred streak length
+
+      // Head vertex
+      positions[i * 6] = bx;
+      positions[i * 6 + 1] = by;
+      positions[i * 6 + 2] = bz;
+      tails[i * 2] = 0.0;
+      speeds[i * 2] = speed;
+      lengths[i * 2] = len;
+
+      // Tail vertex (shares base pos, offset in vertex shader)
+      positions[i * 6 + 3] = bx;
+      positions[i * 6 + 4] = by;
+      positions[i * 6 + 5] = bz;
+      tails[i * 2 + 1] = 1.0;
+      speeds[i * 2 + 1] = speed;
+      lengths[i * 2 + 1] = len;
     }
 
-    rainGeo.setAttribute('position', new THREE.BufferAttribute(rainPositions, 3));
+    rainGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    rainGeo.setAttribute('aTail', new THREE.BufferAttribute(tails, 1));
+    rainGeo.setAttribute('aSpeed', new THREE.BufferAttribute(speeds, 1));
+    rainGeo.setAttribute('aLength', new THREE.BufferAttribute(lengths, 1));
 
-    // Raindrop texture — soft elongated dot
-    const rainCanvas = document.createElement('canvas');
-    rainCanvas.width = 16; rainCanvas.height = 32;
-    const rctx = rainCanvas.getContext('2d');
-    const rainGrad = rctx.createLinearGradient(8, 0, 8, 32);
-    rainGrad.addColorStop(0.0, 'rgba(180, 210, 230, 0.0)');
-    rainGrad.addColorStop(0.3, 'rgba(180, 210, 230, 0.7)');
-    rainGrad.addColorStop(0.7, 'rgba(200, 220, 240, 0.9)');
-    rainGrad.addColorStop(1.0, 'rgba(200, 220, 240, 0.0)');
-    rctx.fillStyle = rainGrad;
-    rctx.fillRect(4, 0, 8, 32);
-    const rainTexture = new THREE.CanvasTexture(rainCanvas);
+    this.rainMat = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0 },
+        uCameraPos: { value: new THREE.Vector3() },
+        uWind: { value: new THREE.Vector3(18.0, 0.0, 11.0) },
+        uFallSpeed: { value: 40.0 },
+        uBoxSize: { value: new THREE.Vector3(boxW, boxH, boxD) },
+        uColor: { value: new THREE.Color(0x809ab0) },
+        uOpacity: { value: 0.0 },
+        uLightning: { value: 0.0 }
+      },
+      vertexShader: `
+        uniform float uTime;
+        uniform vec3 uCameraPos;
+        uniform vec3 uWind;
+        uniform float uFallSpeed;
+        uniform vec3 uBoxSize;
 
-    this.rainMat = new THREE.PointsMaterial({
-      color: 0x9cb5c9,
-      size: 0.6,
-      map: rainTexture,
+        attribute float aTail;
+        attribute float aSpeed;
+        attribute float aLength;
+
+        varying float vAlpha;
+
+        void main() {
+          // Downward gravity fall + horizontal gale wind drift
+          vec3 vel = vec3(uWind.x, -uFallSpeed * aSpeed, uWind.z);
+          vec3 dir = normalize(vel);
+
+          // Continuous falling position in world space
+          vec3 dropPos = position + vel * uTime;
+
+          // Modulo wrap into bounding box around camera
+          vec3 relPos = dropPos - uCameraPos;
+          vec3 wrapped = mod(relPos + uBoxSize * 0.5, uBoxSize) - uBoxSize * 0.5;
+          vec3 headPos = uCameraPos + wrapped;
+
+          // Tail vertex extends backwards along drop trajectory
+          vec3 finalPos = headPos - dir * (aTail * aLength);
+
+          // Distance to camera for depth fading
+          float dist = length(uCameraPos - finalPos);
+
+          // Near fade: raindrops right on lens fade out smoothly (no camera clipping or screen obstruction)
+          float nearFade = smoothstep(1.0, 2.5, dist);
+          // Far fade into atmospheric storm fog
+          float farFade = 1.0 - smoothstep(32.0, 52.0, dist);
+
+          // Streak alpha gradient: head is distinct, tail fades off into motion blur
+          float tailFade = mix(0.70, 0.08, aTail);
+
+          vAlpha = nearFade * farFade * tailFade;
+
+          gl_Position = projectionMatrix * viewMatrix * vec4(finalPos, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 uColor;
+        uniform float uOpacity;
+        uniform float uLightning;
+
+        varying float vAlpha;
+
+        void main() {
+          float alpha = vAlpha * uOpacity;
+          if (alpha < 0.006) discard;
+
+          // Light up in brilliant silver during lightning flashes
+          vec3 rainColor = mix(uColor, vec3(0.85, 0.93, 1.0), clamp(uLightning * 0.28, 0.0, 0.85));
+          float finalAlpha = clamp(alpha * (1.0 + clamp(uLightning * 0.35, 0.0, 1.0)), 0.0, 1.0);
+
+          gl_FragColor = vec4(rainColor, finalAlpha);
+        }
+      `,
       transparent: true,
-      opacity: 0.0,
       depthWrite: false,
-      sizeAttenuation: true
+      blending: THREE.NormalBlending
     });
 
-    this.rainPoints = new THREE.Points(rainGeo, this.rainMat);
-    this.scene.add(this.rainPoints);
+    this.rainLines = new THREE.LineSegments(rainGeo, this.rainMat);
+    this.rainLines.frustumCulled = false;
+    this.rainLines.visible = false;
+    this.scene.add(this.rainLines);
   }
 
   initLightning() {
@@ -157,7 +245,20 @@ export class ParticleSystem {
       this.wakeMat.opacity = 0.72;
     }
 
-    this.rainMat.opacity = weather.rain ? 0.8 : 0.0;
+    const hasRain = !!weather.rain;
+    this.rainMat.uniforms.uOpacity.value = hasRain ? 0.75 : 0.0;
+    this.rainLines.visible = hasRain;
+
+    if (hasRain && weather.windSpeedKnots) {
+      const windSpeed = weather.windSpeedKnots * 0.514; // knots to m/s
+      // Wave / wind direction roughly [0.85, 0.52]
+      this.rainMat.uniforms.uWind.value.set(
+        0.85 * windSpeed * 0.8,
+        0.0,
+        0.52 * windSpeed * 0.8
+      );
+      this.rainMat.uniforms.uFallSpeed.value = 40.0;
+    }
   }
 
   emitWake(sternWorldPos, speedKnots, shipRight) {
@@ -221,7 +322,7 @@ export class ParticleSystem {
     }
   }
 
-  update(dt, ship, physics, isStorm) {
+  update(dt, ship, physics, isStorm, camera = null) {
     const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(ship.quaternion);
     const right = new THREE.Vector3(1, 0, 0).applyQuaternion(ship.quaternion);
     const sternPos = ship.position.clone().add(forward.clone().multiplyScalar(-8.6));
@@ -261,19 +362,12 @@ export class ParticleSystem {
     }
     this.sprayGeo.attributes.position.needsUpdate = true;
 
-    // Rain simulation in storm
-    if (this.rainMat.opacity > 0.05) {
-      const pos = this.rainPoints.geometry.attributes.position.array;
-      for (let i = 0; i < this.rainCount; i++) {
-        pos[i * 3 + 1] -= 60.0 * dt;
-        pos[i * 3] -= 15.0 * dt;
-        if (pos[i * 3 + 1] < -5) {
-          pos[i * 3 + 1] = 65;
-          pos[i * 3] = (Math.random() - 0.5) * 140 + ship.position.x;
-          pos[i * 3 + 2] = (Math.random() - 0.5) * 140 + ship.position.z;
-        }
-      }
-      this.rainPoints.geometry.attributes.position.needsUpdate = true;
+    // GPU Rain simulation in storm
+    if (this.rainLines && this.rainLines.visible) {
+      const camPos = camera ? camera.position : ship.position;
+      this.rainMat.uniforms.uCameraPos.value.copy(camPos);
+      this.rainMat.uniforms.uTime.value += dt;
+      this.rainMat.uniforms.uLightning.value = this.lightningLight ? this.lightningLight.intensity : 0.0;
     }
 
     // Lightning flash in storm

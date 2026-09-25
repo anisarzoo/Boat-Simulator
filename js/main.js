@@ -342,7 +342,7 @@ class App {
 
     // 6. Update Wake, Bow Spray, Rain, Lightning
     const isStorm = this.weather.currentPreset.id === 'storm';
-    this.particles.update(dt, this.ship.group, this.physics, isStorm);
+    this.particles.update(dt, this.ship.group, this.physics, isStorm, this.camera);
 
     // 7. Update Navigation Buoys, Seagull Flock, and Drifting Clouds
     this.buoys.update(dt, this.time, this.weather.currentPreset.waveScale, this.ship.group.position);
