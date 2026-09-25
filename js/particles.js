@@ -101,24 +101,25 @@ export class ParticleSystem {
   }
 
   initRain() {
-    this.rainCount = 16000;
+    this.rainCount = 26000;
     const rainGeo = new THREE.BufferGeometry();
     const positions = new Float32Array(this.rainCount * 2 * 3);
     const tails = new Float32Array(this.rainCount * 2);
     const speeds = new Float32Array(this.rainCount * 2);
     const lengths = new Float32Array(this.rainCount * 2);
 
-    const boxW = 85;
-    const boxH = 48;
-    const boxD = 85;
+    const boxW = 160;
+    const boxH = 54;
+    const boxD = 160;
+    const minY = -2.0;
 
     for (let i = 0; i < this.rainCount; i++) {
       const bx = (Math.random() - 0.5) * boxW;
-      const by = Math.random() * boxH;
+      const by = Math.random() * boxH + minY;
       const bz = (Math.random() - 0.5) * boxD;
 
       const speed = 0.82 + Math.random() * 0.36; // Individual terminal velocity variation
-      const len = 1.3 + Math.random() * 1.5;      // Realistic motion-blurred streak length
+      const len = 1.6 + Math.random() * 1.6;      // Realistic motion-blurred streak length
 
       // Head vertex
       positions[i * 6] = bx;
@@ -145,20 +146,26 @@ export class ParticleSystem {
     this.rainMat = new THREE.ShaderMaterial({
       uniforms: {
         uTime: { value: 0 },
-        uCameraPos: { value: new THREE.Vector3() },
+        uBoxCenter: { value: new THREE.Vector3() },
+        uRealCamPos: { value: new THREE.Vector3() },
         uWind: { value: new THREE.Vector3(18.0, 0.0, 11.0) },
-        uFallSpeed: { value: 40.0 },
-        uBoxSize: { value: new THREE.Vector3(boxW, boxH, boxD) },
-        uColor: { value: new THREE.Color(0x809ab0) },
+        uFallSpeed: { value: 42.0 },
+        uBoxSizeXZ: { value: new THREE.Vector2(boxW, boxD) },
+        uMinY: { value: minY },
+        uBoxHeight: { value: boxH },
+        uColor: { value: new THREE.Color(0x94adc4) },
         uOpacity: { value: 0.0 },
         uLightning: { value: 0.0 }
       },
       vertexShader: `
         uniform float uTime;
-        uniform vec3 uCameraPos;
+        uniform vec3 uBoxCenter;
+        uniform vec3 uRealCamPos;
         uniform vec3 uWind;
         uniform float uFallSpeed;
-        uniform vec3 uBoxSize;
+        uniform vec2 uBoxSizeXZ;
+        uniform float uMinY;
+        uniform float uBoxHeight;
 
         attribute float aTail;
         attribute float aSpeed;
@@ -174,24 +181,31 @@ export class ParticleSystem {
           // Continuous falling position in world space
           vec3 dropPos = position + vel * uTime;
 
-          // Modulo wrap into bounding box around camera
-          vec3 relPos = dropPos - uCameraPos;
-          vec3 wrapped = mod(relPos + uBoxSize * 0.5, uBoxSize) - uBoxSize * 0.5;
-          vec3 headPos = uCameraPos + wrapped;
+          // 1. Horizontal wrapping around camera/box center
+          vec2 relXZ = dropPos.xz - uBoxCenter.xz;
+          vec2 wrappedXZ = mod(relXZ + uBoxSizeXZ * 0.5, uBoxSizeXZ) - uBoxSizeXZ * 0.5;
+          vec2 headXZ = uBoxCenter.xz + wrappedXZ;
+
+          // 2. Vertical wrapping from cloud base down to water surface
+          float relY = dropPos.y - uMinY;
+          float wrappedY = mod(relY, uBoxHeight) + uMinY;
+          float headY = wrappedY;
+
+          vec3 headPos = vec3(headXZ.x, headY, headXZ.y);
 
           // Tail vertex extends backwards along drop trajectory
           vec3 finalPos = headPos - dir * (aTail * aLength);
 
-          // Distance to camera for depth fading
-          float dist = length(uCameraPos - finalPos);
+          // Distance to actual camera for depth fading
+          float dist = length(uRealCamPos - finalPos);
 
           // Near fade: raindrops right on lens fade out smoothly (no camera clipping or screen obstruction)
-          float nearFade = smoothstep(1.0, 2.5, dist);
+          float nearFade = smoothstep(0.6, 2.0, dist);
           // Far fade into atmospheric storm fog
-          float farFade = 1.0 - smoothstep(32.0, 52.0, dist);
+          float farFade = 1.0 - smoothstep(65.0, 85.0, dist);
 
-          // Streak alpha gradient: head is distinct, tail fades off into motion blur
-          float tailFade = mix(0.70, 0.08, aTail);
+          // Streak alpha gradient: head is bright and distinct, tail fades off into motion blur
+          float tailFade = mix(0.92, 0.15, aTail);
 
           vAlpha = nearFade * farFade * tailFade;
 
@@ -207,10 +221,10 @@ export class ParticleSystem {
 
         void main() {
           float alpha = vAlpha * uOpacity;
-          if (alpha < 0.006) discard;
+          if (alpha < 0.005) discard;
 
           // Light up in brilliant silver during lightning flashes
-          vec3 rainColor = mix(uColor, vec3(0.85, 0.93, 1.0), clamp(uLightning * 0.28, 0.0, 0.85));
+          vec3 rainColor = mix(uColor, vec3(0.88, 0.95, 1.0), clamp(uLightning * 0.28, 0.0, 0.85));
           float finalAlpha = clamp(alpha * (1.0 + clamp(uLightning * 0.35, 0.0, 1.0)), 0.0, 1.0);
 
           gl_FragColor = vec4(rainColor, finalAlpha);
@@ -218,11 +232,13 @@ export class ParticleSystem {
       `,
       transparent: true,
       depthWrite: false,
+      depthTest: true,
       blending: THREE.NormalBlending
     });
 
     this.rainLines = new THREE.LineSegments(rainGeo, this.rainMat);
     this.rainLines.frustumCulled = false;
+    this.rainLines.renderOrder = 999;
     this.rainLines.visible = false;
     this.scene.add(this.rainLines);
   }
@@ -246,7 +262,7 @@ export class ParticleSystem {
     }
 
     const hasRain = !!weather.rain;
-    this.rainMat.uniforms.uOpacity.value = hasRain ? 0.75 : 0.0;
+    this.rainMat.uniforms.uOpacity.value = hasRain ? 0.85 : 0.0;
     this.rainLines.visible = hasRain;
 
     if (hasRain && weather.windSpeedKnots) {
@@ -257,7 +273,7 @@ export class ParticleSystem {
         0.0,
         0.52 * windSpeed * 0.8
       );
-      this.rainMat.uniforms.uFallSpeed.value = 40.0;
+      this.rainMat.uniforms.uFallSpeed.value = 42.0;
     }
   }
 
@@ -364,8 +380,19 @@ export class ParticleSystem {
 
     // GPU Rain simulation in storm
     if (this.rainLines && this.rainLines.visible) {
-      const camPos = camera ? camera.position : ship.position;
-      this.rainMat.uniforms.uCameraPos.value.copy(camPos);
+      const realCamPos = camera ? camera.position : ship.position;
+      this.rainMat.uniforms.uRealCamPos.value.copy(realCamPos);
+
+      // Center the rain volume slightly ahead of camera view so the ship and forward sea are thoroughly covered
+      if (camera) {
+        const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+        fwd.y = 0;
+        if (fwd.lengthSq() > 0.001) fwd.normalize();
+        this.rainMat.uniforms.uBoxCenter.value.copy(realCamPos).addScaledVector(fwd, 20.0);
+      } else {
+        this.rainMat.uniforms.uBoxCenter.value.copy(ship.position);
+      }
+
       this.rainMat.uniforms.uTime.value += dt;
       this.rainMat.uniforms.uLightning.value = this.lightningLight ? this.lightningLight.intensity : 0.0;
     }
