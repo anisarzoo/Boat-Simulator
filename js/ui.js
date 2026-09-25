@@ -18,6 +18,8 @@ export class UIController {
       windSpeedVal: document.getElementById('windSpeedVal'),
       rollVal: document.getElementById('rollVal'),
       pitchVal: document.getElementById('pitchVal'),
+      depthVal: document.getElementById('depthVal'),
+      wpVal: document.getElementById('wpVal'),
       toast: document.getElementById('toast'),
       muteBtn: document.getElementById('muteBtn'),
       audioIcon: document.getElementById('audioIcon'),
@@ -261,6 +263,32 @@ export class UIController {
     // Roll & Pitch
     this.dom.rollVal.textContent = `${physics.rollDeg.toFixed(1)}°`;
     this.dom.pitchVal.textContent = `${physics.pitchDeg.toFixed(1)}°`;
+
+    // Live Marine Depth Sounder
+    if (this.dom.depthVal && physics.currentDepthMeters !== undefined) {
+      const d = physics.currentDepthMeters.toFixed(1);
+      this.dom.depthVal.textContent = `${d} m`;
+      if (physics.shallowAlarm) {
+        this.dom.depthVal.style.color = '#ff1744';
+        this.dom.depthVal.style.textShadow = '0 0 8px rgba(255, 23, 68, 0.8)';
+      } else {
+        this.dom.depthVal.style.color = '#00e5ff';
+        this.dom.depthVal.style.textShadow = 'none';
+      }
+    }
+
+    // Active Waypoint & Navigation Track
+    if (this.dom.wpVal && physics.waypoints) {
+      if (physics.autopilot) {
+        const wp = physics.waypoints[physics.activeWaypointIndex];
+        const dist = Math.round(physics.distToWaypoint || 0);
+        this.dom.wpVal.textContent = `${wp.name.split(' ')[0]} ${dist}m`;
+        this.dom.wpVal.style.color = '#ffb300';
+      } else {
+        this.dom.wpVal.textContent = 'MANUAL';
+        this.dom.wpVal.style.color = '#90a4ae';
+      }
+    }
 
     // Live FPS readout
     this.frameCount++;

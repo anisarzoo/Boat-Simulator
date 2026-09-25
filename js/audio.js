@@ -159,6 +159,99 @@ export class OceanAudio {
     hornGain.connect(this.masterGain);
   }
 
+  // Distant AI vessel fog horn echo response
+  playAIFogHorn(distanceMeters = 500) {
+    if (!this.started || this.isMuted) return;
+
+    const t = this.ctx.currentTime;
+    const hornGain = this.ctx.createGain();
+    const distFactor = THREE.MathUtils.clamp(1.0 - (distanceMeters / 1200.0), 0.15, 0.65);
+    hornGain.gain.setValueAtTime(0.0, t);
+    hornGain.gain.linearRampToValueAtTime(0.35 * distFactor, t + 0.6);
+    hornGain.gain.setValueAtTime(0.35 * distFactor, t + 3.2);
+    hornGain.gain.exponentialRampToValueAtTime(0.001, t + 5.2);
+
+    // Deep container ship horn (low E1/B1 fundamental)
+    const freqs = [55.0, 82.5, 110.0];
+    freqs.forEach(f => {
+      const osc = this.ctx.createOscillator();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(f, t);
+
+      const fFilter = this.ctx.createBiquadFilter();
+      fFilter.type = 'lowpass';
+      // Muffle high frequencies at distance
+      fFilter.frequency.setValueAtTime(280 * distFactor + 120, t);
+
+      osc.connect(fFilter);
+      fFilter.connect(hornGain);
+      osc.start(t);
+      osc.stop(t + 5.5);
+    });
+
+    hornGain.connect(this.masterGain);
+  }
+
+  // Hydraulic/Electric Bow Thruster Water Jet Cavitation
+  setBowThruster(active) {
+    if (!this.started || this.isMuted) return;
+    if (active) {
+      if (!this.thrusterSource) {
+        const bufferSize = this.ctx.sampleRate * 2;
+        const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+        const data = noiseBuffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+
+        this.thrusterSource = this.ctx.createBufferSource();
+        this.thrusterSource.buffer = noiseBuffer;
+        this.thrusterSource.loop = true;
+
+        this.thrusterFilter = this.ctx.createBiquadFilter();
+        this.thrusterFilter.type = 'bandpass';
+        this.thrusterFilter.frequency.setValueAtTime(260, this.ctx.currentTime);
+        this.thrusterFilter.Q.setValueAtTime(2.5, this.ctx.currentTime);
+
+        this.thrusterGain = this.ctx.createGain();
+        this.thrusterGain.gain.setValueAtTime(0.0, this.ctx.currentTime);
+        this.thrusterGain.gain.linearRampToValueAtTime(0.22, this.ctx.currentTime + 0.2);
+
+        this.thrusterSource.connect(this.thrusterFilter);
+        this.thrusterFilter.connect(this.thrusterGain);
+        this.thrusterGain.connect(this.masterGain);
+        this.thrusterSource.start();
+      }
+    } else {
+      if (this.thrusterSource && this.thrusterGain) {
+        this.thrusterGain.gain.linearRampToValueAtTime(0.0, this.ctx.currentTime + 0.25);
+        setTimeout(() => {
+          if (this.thrusterSource) {
+            try { this.thrusterSource.stop(); } catch(e) {}
+            this.thrusterSource = null;
+          }
+        }, 300);
+      }
+    }
+  }
+
+  // Shallow water depth sounder ping alarm
+  playShallowPing() {
+    if (!this.started || this.isMuted) return;
+    const t = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(1850, t);
+
+    gain.gain.setValueAtTime(0.18, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
+
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+    osc.start(t);
+    osc.stop(t + 0.15);
+  }
+
   // Hydrodynamic wave crash / hull impact sound
   playWaveImpact(intensity = 1.0) {
     if (!this.started || this.isMuted) return;

@@ -26,6 +26,25 @@ export class ShipPhysics {
     this.currentWaveHeight = 0;
     this.rollDeg = 0;
     this.pitchDeg = 0;
+
+    // Bow Thruster (-1.0 Port, +1.0 Starboard)
+    this.bowThruster = 0;
+    this.targetBowThruster = 0;
+
+    // Navigation & Waypoint Autopilot
+    this.autopilot = false;
+    this.waypoints = [
+      { name: 'Channel Marker 1', x: 0, z: 160 },
+      { name: 'Cape Horizon Approach', x: 280, z: 420 },
+      { name: 'Lighthouse Anchorage', x: 440, z: 580 },
+      { name: 'The Needles Passage', x: -380, z: 320 },
+      { name: 'Open Ocean Patrol', x: 0, z: 0 }
+    ];
+    this.activeWaypointIndex = 0;
+    this.distToWaypoint = 0;
+    this.bearingToWaypoint = 0;
+    this.currentDepthMeters = 58.0;
+    this.shallowAlarm = false;
   }
 
   setControls(throttleInput, rudderInput) {
@@ -33,10 +52,40 @@ export class ShipPhysics {
     this.targetRudder = THREE.MathUtils.clamp(rudderInput, -1.0, 1.0);
   }
 
-  update(dt, time, waveScale = 1.0) {
-    // 1. Smooth control inputs (engine throttle lag & hydraulic rudder response)
+  setBowThruster(val) {
+    this.targetBowThruster = THREE.MathUtils.clamp(val, -1.0, 1.0);
+  }
+
+  setAutopilot(active) {
+    this.autopilot = active;
+  }
+
+  update(dt, time, waveScale = 1.0, archipelago = null) {
+    // 0. Waypoint Autopilot Navigation
+    if (this.autopilot) {
+      const wp = this.waypoints[this.activeWaypointIndex];
+      const toWp = new THREE.Vector3(wp.x - this.position.x, 0, wp.z - this.position.z);
+      this.distToWaypoint = toWp.length();
+      const targetHeading = Math.atan2(toWp.x, toWp.z);
+      this.bearingToWaypoint = Math.round(((targetHeading * 180) / Math.PI + 360) % 360);
+
+      const currentHeadingRad = (this.headingDeg * Math.PI) / 180;
+      let headingError = targetHeading - currentHeadingRad;
+      while (headingError > Math.PI) headingError -= Math.PI * 2;
+      while (headingError < -Math.PI) headingError += Math.PI * 2;
+
+      this.targetRudder = THREE.MathUtils.clamp(-headingError * 2.2, -1.0, 1.0);
+      this.targetThrottle = 0.85;
+
+      if (this.distToWaypoint < 42.0) {
+        this.activeWaypointIndex = (this.activeWaypointIndex + 1) % this.waypoints.length;
+      }
+    }
+
+    // 1. Smooth control inputs (engine throttle lag, hydraulic rudder, electric bow thruster)
     this.throttle = THREE.MathUtils.damp(this.throttle, this.targetThrottle, 2.2, dt);
     this.rudder = THREE.MathUtils.damp(this.rudder, this.targetRudder, 4.5, dt);
+    this.bowThruster = THREE.MathUtils.damp(this.bowThruster, this.targetBowThruster, 6.0, dt);
 
     // Ship local orientation vectors
     const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(this.quaternion).normalize();
@@ -102,6 +151,14 @@ export class ShipPhysics {
     const heelTorque = this.rudder * forwardSpeed * 5200.0;
     totalTorque.z += heelTorque;
 
+    // 3b. Electric Bow Thruster Force & Turning Moment (360° spin & crab docking)
+    if (Math.abs(this.bowThruster) > 0.01) {
+      const thrusterMag = this.bowThruster * 34000.0;
+      totalForce.add(right.clone().multiplyScalar(thrusterMag));
+      // Moment arm at bow (7.2m forward of center of gravity)
+      totalTorque.y -= thrusterMag * 7.2;
+    }
+
     // 4. Hydrodynamic Resistance (Linear & Angular Drag)
     // Lateral drag (ships resist sideways sliding heavily)
     const lateralSpeed = this.linearVelocity.dot(right);
@@ -161,5 +218,11 @@ export class ShipPhysics {
     let heading = THREE.MathUtils.radToDeg(-currentEuler.y) % 360;
     if (heading < 0) heading += 360;
     this.headingDeg = Math.round(heading);
+
+    // 8. Live Marine Depth Sounder
+    if (archipelago) {
+      this.currentDepthMeters = archipelago.getWaterDepthAt(this.position);
+      this.shallowAlarm = (this.currentDepthMeters < 8.0);
+    }
   }
 }

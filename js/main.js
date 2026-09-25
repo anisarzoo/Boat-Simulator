@@ -11,6 +11,9 @@ import { UIController } from './ui.js';
 import { BuoyManager } from './buoys.js';
 import { SeagullFlock } from './seagulls.js';
 import { CloudManager } from './clouds.js';
+import { MarineWildlife } from './wildlife.js';
+import { MarineTraffic } from './traffic.js';
+import { Archipelago } from './islands.js';
 
 class App {
   constructor() {
@@ -93,7 +96,16 @@ class App {
     // 9. Procedural Web Audio
     this.audio = new OceanAudio();
 
-    // 10. Glassmorphic UI HUD
+    // 10. Archipelago Islands & Coastal Lighthouse
+    this.islands = new Archipelago(this.scene);
+
+    // 11. Marine Wildlife (Bow-riding Dolphins & Breaching Whales)
+    this.wildlife = new MarineWildlife(this.scene);
+
+    // 12. AI Marine Traffic (Container Ship, Fishing Trawler, Sailing Yacht)
+    this.traffic = new MarineTraffic(this.scene);
+
+    // 13. Glassmorphic UI HUD
     this.ui = new UIController({
       onWeatherChange: (id) => {
         const preset = this.weather.setPresetById(id);
@@ -114,11 +126,17 @@ class App {
       },
       onToggleAutopilot: () => {
         this.autopilot = !this.autopilot;
-        this.ui.showToast(this.autopilot ? 'Autopilot Full Ahead' : 'Manual Helm Engaged');
+        this.physics.setAutopilot(this.autopilot);
+        const wp = this.physics.waypoints[this.physics.activeWaypointIndex];
+        this.ui.showToast(this.autopilot ? `Autopilot: Route to ${wp.name}` : 'Manual Helm Engaged');
         return this.autopilot;
       },
       onHorn: () => {
         this.audio.playFogHorn();
+        const responder = this.traffic.respondToPlayerHorn(this.ship.group.position, this.audio);
+        if (responder) {
+          this.ui.showToast(`Horn: ${responder} answering...`);
+        }
       },
       onToggleMute: () => {
         return this.audio.toggleMute();
@@ -146,7 +164,8 @@ class App {
       // Quick key shortcuts
       if (e.key === 'h' || e.key === 'H') {
         this.audio.playFogHorn();
-        this.ui.showToast('Fog Horn Sounded');
+        const responder = this.traffic.respondToPlayerHorn(this.ship.group.position, this.audio);
+        this.ui.showToast(responder ? `Horn Echo: ${responder} answering...` : 'Fog Horn Sounded');
       }
       if (e.key === 'l' || e.key === 'L') {
         const on = this.ship.toggleLights();
@@ -156,7 +175,9 @@ class App {
       }
       if (e.key === 'c' || e.key === 'C') {
         this.autopilot = !this.autopilot;
-        this.ui.showToast(this.autopilot ? 'Autopilot Full Ahead' : 'Manual Helm Engaged');
+        this.physics.setAutopilot(this.autopilot);
+        const wp = this.physics.waypoints[this.physics.activeWaypointIndex];
+        this.ui.showToast(this.autopilot ? `Autopilot: Route to ${wp.name}` : 'Manual Helm Engaged');
         const btn = document.getElementById('cruiseBtn');
         if (btn) btn.classList.toggle('active', this.autopilot);
       }
@@ -249,6 +270,13 @@ class App {
     if (this.touchRudder !== 0) rudderInput = this.touchRudder;
 
     this.physics.setControls(throttleInput, rudderInput);
+
+    // Bow Thruster (Q: Port / E: Starboard)
+    let thrusterInput = 0;
+    if (this.keys['q']) thrusterInput -= 1.0;
+    if (this.keys['e']) thrusterInput += 1.0;
+    this.physics.setBowThruster(thrusterInput);
+    this.audio.setBowThruster(Math.abs(thrusterInput) > 0.05);
   }
 
   updateCamera(dt) {
@@ -342,8 +370,14 @@ class App {
     // 1. Process player inputs
     this.handleControls();
 
-    // 2. Update hydrodynamics physics
-    this.physics.update(dt, this.time, this.weather.currentPreset.waveScale);
+    // 2. Update hydrodynamics physics & live depth sounding
+    this.physics.update(dt, this.time, this.weather.currentPreset.waveScale, this.islands);
+
+    // Shallow water sonar warning alarm
+    if (this.physics.shallowAlarm && (this.time - (this.lastShallowPing || 0) > 1.8)) {
+      this.audio.playShallowPing();
+      this.lastShallowPing = this.time;
+    }
 
     // Dynamic wave impact sounds when bow slices heavy wave swells
     const vertVelocity = this.physics.linearVelocity.y;
@@ -369,7 +403,10 @@ class App {
     const isStorm = this.weather.currentPreset.id === 'storm';
     this.particles.update(dt, this.ship.group, this.physics, isStorm, this.camera);
 
-    // 7. Update Navigation Buoys, Seagull Flock, and Drifting Clouds
+    // 7. Update Wildlife, AI Traffic, Islands, Buoys, Seagulls, and Clouds
+    this.wildlife.update(dt, this.time, this.ship.group.position, this.ship.group.quaternion, this.physics.speedKnots);
+    this.traffic.update(dt, this.time, this.ship.group.position);
+    this.islands.update(dt);
     this.buoys.update(dt, this.time, this.weather.currentPreset.waveScale, this.ship.group.position);
     this.seagulls.update(dt, this.time, this.ship.group.position, this.ship.group.quaternion, this.physics.speedKnots);
     this.clouds.update(dt, this.time, this.ship.group.position);
