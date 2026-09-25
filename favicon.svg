@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0a192f"/>
+      <stop offset="100%" stop-color="#050d18"/>
+    </linearGradient>
+    <linearGradient id="cyanGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#00e5ff"/>
+      <stop offset="100%" stop-color="#00b0ff"/>
+    </linearGradient>
+    <linearGradient id="shipGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#cfd8dc"/>
+    </linearGradient>
+    <linearGradient id="goldGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffd54f"/>
+      <stop offset="100%" stop-color="#ff9800"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- Base rounded badge -->
+  <rect width="64" height="64" rx="16" fill="url(#bg)"/>
+  <rect width="60" height="60" x="2" y="2" rx="14" fill="none" stroke="rgba(0, 229, 255, 0.35)" stroke-width="1.5"/>
+
+  <!-- Stylized Ocean Waves -->
+  <path d="M 6 42 Q 18 36, 32 42 T 58 42 L 58 54 Q 44 58, 32 54 T 6 54 Z" fill="rgba(0, 150, 255, 0.35)"/>
+  <path d="M 6 46 Q 20 40, 32 46 T 58 46 L 58 58 Q 44 60, 32 58 T 6 58 Z" fill="url(#cyanGrad)"/>
+
+  <!-- Sleek Yacht Hull / Slicing Bow -->
+  <path d="M 14 36 L 46 36 L 54 28 L 22 28 Z" fill="url(#shipGrad)"/>
+  <!-- Cabin Superstructure -->
+  <path d="M 22 28 L 38 28 L 42 22 L 26 22 Z" fill="#ffffff"/>
+  <!-- Tinted Bridge Glass -->
+  <path d="M 33 27 L 39 27 L 41 23 L 35 23 Z" fill="url(#cyanGrad)"/>
+  <!-- Radar Mast & Gold Beacon -->
+  <line x1="30" y1="22" x2="30" y2="15" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="30" cy="14" r="2.5" fill="url(#goldGrad)"/>
+  <!-- Bow Wake Ripple -->
+  <path d="M 52 32 Q 58 35, 60 40" stroke="#00e5ff" stroke-width="2" stroke-linecap="round" fill="none"/>
+</svg>
