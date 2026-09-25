@@ -228,41 +228,49 @@ export class UIController {
   }
 
   update(physics, weather) {
+    if (!physics || !weather) return;
+
     // Speed
-    const spd = Math.max(0, physics.speedKnots);
-    this.dom.speedVal.textContent = spd.toFixed(1);
-    this.dom.speedBar.style.width = `${Math.min(100, (spd / 24.0) * 100)}%`;
+    const spd = Math.max(0, physics.speedKnots || 0);
+    if (this.dom.speedVal) this.dom.speedVal.textContent = spd.toFixed(1);
+    if (this.dom.speedBar) this.dom.speedBar.style.width = `${Math.min(100, (spd / 24.0) * 100)}%`;
 
     // Compass & Heading
-    const deg = physics.headingDeg;
-    this.dom.compassDegree.textContent = `${deg}°`;
+    const deg = physics.headingDeg || 0;
+    if (this.dom.compassDegree) this.dom.compassDegree.textContent = `${deg}°`;
     const cardinalIdx = Math.round(deg / 22.5) % 16;
-    this.dom.compassVal.textContent = this.cardinals[cardinalIdx];
+    if (this.dom.compassVal) this.dom.compassVal.textContent = this.cardinals[cardinalIdx];
     if (this.dom.compassRose) {
       this.dom.compassRose.style.transform = `rotate(${-deg}deg)`;
     }
 
     // Engine Throttle
-    const throttlePct = Math.round(physics.throttle * 100);
-    this.dom.throttleVal.textContent = `${throttlePct > 0 ? '+' : ''}${throttlePct}%`;
-    this.dom.throttleBar.style.width = `${Math.abs(throttlePct)}%`;
-    this.dom.throttleBar.style.background = throttlePct >= 0 ? 'var(--accent-cyan)' : 'var(--accent-red)';
+    const throttlePct = Math.round((physics.throttle || 0) * 100);
+    if (this.dom.throttleVal) this.dom.throttleVal.textContent = `${throttlePct > 0 ? '+' : ''}${throttlePct}%`;
+    if (this.dom.throttleBar) {
+      this.dom.throttleBar.style.width = `${Math.abs(throttlePct)}%`;
+      this.dom.throttleBar.style.background = throttlePct >= 0 ? 'var(--accent-cyan)' : 'var(--accent-red)';
+    }
 
     // Rudder
-    const rudderDeg = Math.round(physics.rudder * 32);
+    const rudderDeg = Math.round((physics.rudder || 0) * 32);
     const rudderSide = rudderDeg < 0 ? 'PORT' : (rudderDeg > 0 ? 'STBD' : 'MID');
-    this.dom.rudderVal.textContent = `${Math.abs(rudderDeg)}° ${rudderSide}`;
+    if (this.dom.rudderVal) this.dom.rudderVal.textContent = `${Math.abs(rudderDeg)}° ${rudderSide}`;
     if (this.dom.rudderIndicator) {
-      this.dom.rudderIndicator.style.transform = `translateX(${physics.rudder * 32}px)`;
+      this.dom.rudderIndicator.style.transform = `translateX(${(physics.rudder || 0) * 32}px)`;
     }
 
     // Sea State
-    this.dom.waveHeightVal.textContent = `${(physics.currentWaveHeight * 1.8).toFixed(1)} m`;
-    this.dom.windSpeedVal.textContent = `${weather.windSpeedKnots} kts`;
+    if (this.dom.waveHeightVal) this.dom.waveHeightVal.textContent = `${((physics.currentWaveHeight || 0) * 1.8).toFixed(1)} m`;
+    if (this.dom.windSpeedVal) this.dom.windSpeedVal.textContent = `${weather.windSpeedKnots || 0} kts`;
 
-    // Roll & Pitch
-    this.dom.rollVal.textContent = `${physics.rollDeg.toFixed(1)}°`;
-    this.dom.pitchVal.textContent = `${physics.pitchDeg.toFixed(1)}°`;
+    // Roll & Pitch (defensively guarded)
+    if (this.dom.rollVal && physics.rollDeg !== undefined) {
+      this.dom.rollVal.textContent = `${physics.rollDeg.toFixed(1)}°`;
+    }
+    if (this.dom.pitchVal && physics.pitchDeg !== undefined) {
+      this.dom.pitchVal.textContent = `${physics.pitchDeg.toFixed(1)}°`;
+    }
 
     // Live Marine Depth Sounder
     if (this.dom.depthVal && physics.currentDepthMeters !== undefined) {

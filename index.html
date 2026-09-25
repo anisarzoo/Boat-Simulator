@@ -225,9 +225,9 @@
         <!-- Sea State Telemetry -->
         <div class="glass-card sea-state-card">
           <div class="gauge-header" style="margin-bottom: 8px;">
-            <span>Sea State</span>
+            <span>Sea State & Attitude</span>
           </div>
-          <div class="sea-stat-grid">
+          <div class="sea-stat-grid" style="grid-template-columns: repeat(3, 1fr); min-width: 190px;">
             <div class="stat-item">
               <div class="label">Depth</div>
               <div id="depthVal" class="val" style="color: #00e5ff;">58.4 m</div>
@@ -242,7 +242,15 @@
             </div>
             <div class="stat-item">
               <div class="label">Waypoint</div>
-              <div id="wpVal" class="val" style="color: #ffb300;">Ch 1</div>
+              <div id="wpVal" class="val" style="color: #ffb300;">MANUAL</div>
+            </div>
+            <div class="stat-item">
+              <div class="label">Roll</div>
+              <div id="rollVal" class="val">0.0°</div>
+            </div>
+            <div class="stat-item">
+              <div class="label">Pitch</div>
+              <div id="pitchVal" class="val">0.0°</div>
             </div>
           </div>
         </div>
