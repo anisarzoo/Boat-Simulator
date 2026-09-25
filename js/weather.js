@@ -134,7 +134,7 @@ export class WeatherManager {
 
   // 1. SKY DOME — Photorealistic with volumetric cloud layers
   initSkyDome() {
-    const skyGeo = new THREE.SphereGeometry(1200, 64, 48);
+    const skyGeo = new THREE.SphereGeometry(2600, 64, 48);
 
     this.skyMat = new THREE.ShaderMaterial({
       uniforms: {
@@ -142,6 +142,8 @@ export class WeatherManager {
         uBottomColor: { value: new THREE.Color(0xff6622) },
         uSunColor: { value: new THREE.Color(0xff8833) },
         uSunDir: { value: new THREE.Vector3(0.2, 0.2, 0.9).normalize() },
+        uMoonDir: { value: new THREE.Vector3(-0.5, 0.5, -0.7).normalize() },
+        uMoonIntensity: { value: 0.0 },
         uAurora: { value: 0.0 },
         uTime: { value: 0 }
       },
@@ -160,6 +162,8 @@ export class WeatherManager {
         uniform vec3 uBottomColor;
         uniform vec3 uSunColor;
         uniform vec3 uSunDir;
+        uniform vec3 uMoonDir;
+        uniform float uMoonIntensity;
         uniform float uAurora;
         uniform float uTime;
         varying vec3 vWorldPos;
@@ -197,13 +201,11 @@ export class WeatherManager {
 
         // ── Domain-warped fBm for naturalistic cloud formations ──
         float cloudDensity(vec2 uv, float time) {
-          // First domain warp pass
           vec2 q = vec2(
             fbm(uv + vec2(0.0, 0.0) + time * 0.015),
             fbm(uv + vec2(5.2, 1.3) - time * 0.012)
           );
 
-          // Second domain warp pass (gives complex, organic shapes)
           vec2 r = vec2(
             fbm(uv + 4.0 * q + vec2(1.7, 9.2) + time * 0.008),
             fbm(uv + 4.0 * q + vec2(8.3, 2.8) - time * 0.010)
@@ -219,69 +221,76 @@ export class WeatherManager {
           float h = clamp(dir.y * 1.35, 0.0, 1.0);
 
           // Non-linear sky gradient: Rayleigh-like scattering simulation
-          vec3 sky = mix(uBottomColor, uTopColor, pow(h, 0.52));
+          vec3 sky = mix(uBottomColor, uTopColor, pow(h, 0.38));
 
           // Zenith-to-horizon tint shift (blue to warmer as y→0)
           vec3 midTint = mix(uBottomColor, uTopColor, 0.35) * 1.08;
           float midBand = exp(-pow((h - 0.25) * 3.5, 2.0));
           sky = mix(sky, midTint, midBand * 0.25);
 
-          // ── Mie Scattering: Sun glow + atmospheric disc ──
+          // ── Physically Inspired Solar Disc & Mie Atmospheric Scattering ──
           vec3 sunDir = normalize(uSunDir);
           float sunDot = max(dot(dir, sunDir), 0.0);
 
-          // Large soft atmospheric glow (Mie forward scatter)
-          float mieGlow = pow(sunDot, 6.0) * 0.4;
-          // Tight corona
-          float corona = pow(sunDot, 32.0) * 0.8;
-          // Sun disc core
-          float disc = pow(sunDot, 200.0) * 2.5;
-          sky += uSunColor * (mieGlow + corona + disc);
+          if (sunDot > 0.0) {
+            // Intense crisp solar core (1 degree disc with smooth anti-aliased edge)
+            float sunCore = smoothstep(0.9994, 0.99985, sunDot) * 8.0;
+            // High-intensity inner corona
+            float sunCorona = pow(sunDot, 128.0) * 2.2;
+            // Medium atmospheric bloom
+            float sunBloom = pow(sunDot, 24.0) * 0.85;
+            // Broad Mie scattering halo
+            float mieGlow = pow(sunDot, 5.0) * 0.35;
+
+            sky += uSunColor * (sunCore + sunCorona + sunBloom + mieGlow);
+          }
 
           // Horizon atmospheric extinction band
-          float horizonHaze = exp(-max(dir.y, 0.0) * 6.5);
-          vec3 hazeColor = mix(uBottomColor, uSunColor, pow(sunDot, 3.0) * 0.3);
-          sky = mix(sky, hazeColor, horizonHaze * 0.4);
+          float horizonHaze = exp(-max(dir.y, 0.0) * 8.0);
+          vec3 hazeColor = mix(uBottomColor, uSunColor, pow(sunDot, 3.0) * 0.25);
+          sky = mix(sky, hazeColor, horizonHaze * 0.3);
+
+          // ── Lunar Atmospheric Glow ──
+          if (uMoonIntensity > 0.02) {
+            vec3 moonDir = normalize(uMoonDir);
+            float moonDot = max(dot(dir, moonDir), 0.0);
+            float moonCorona = pow(moonDot, 120.0) * 1.2;
+            float moonGlow = pow(moonDot, 16.0) * 0.4;
+            sky += vec3(0.65, 0.82, 1.0) * (moonCorona + moonGlow) * uMoonIntensity;
+          }
 
           // ── Volumetric Cloud Layer ──
           if (dir.y > 0.02) {
             // Project onto a virtual cloud plane at altitude
-            // Use non-linear projection to prevent stretching at low angles
-            float cloudAlt = max(dir.y, 0.08);
-            vec2 cloudUV = (dir.xz / cloudAlt) * 0.28;
+            float cloudAlt = max(dir.y, 0.1);
+            vec2 cloudUV = (dir.xz / cloudAlt) * 0.22;
 
-            // Domain-warped cloud density — creates organic, non-repeating formations
+            // Domain-warped cloud density
             float density = cloudDensity(cloudUV, uTime);
 
-            // Coverage threshold — controls cloud amount
-            float coverage = 0.42;
-            float cloudMask = smoothstep(coverage - 0.05, coverage + 0.32, density);
+            // Coverage threshold
+            float coverage = 0.48;
+            float cloudMask = smoothstep(coverage, coverage + 0.28, density);
 
-            // Fade clouds near horizon to prevent hard cutoff
-            cloudMask *= smoothstep(0.02, 0.22, dir.y);
+            // Smooth fade near horizon to prevent hard cutoff
+            cloudMask *= smoothstep(0.03, 0.28, dir.y);
 
-            // Height-based fade (thin out at zenith, thicker at mid-sky)
-            cloudMask *= 1.0 - smoothstep(0.7, 1.0, dir.y) * 0.5;
+            // Height-based fade
+            cloudMask *= 1.0 - smoothstep(0.65, 0.95, dir.y) * 0.4;
 
             if (cloudMask > 0.005) {
-              // ── Cloud Lighting Model ──
-              // Simplified volumetric: sample density offset toward sun to simulate self-shadowing
+              // Cloud lighting model: self-shadowing towards sun
               vec2 sunOffset = sunDir.xz * 0.12;
               float shadowDensity = cloudDensity(cloudUV + sunOffset, uTime);
               float shadowFactor = smoothstep(coverage, coverage + 0.35, shadowDensity);
 
-              // Sun-lit bright tops
               vec3 cloudBright = mix(vec3(1.0, 0.98, 0.95), uSunColor, 0.35);
-              // Shadow dark bottoms (ambient sky color)
               vec3 cloudDark = mix(uTopColor * 0.55, uBottomColor * 0.45, 0.4);
 
-              // Sun angle influence on cloud lighting
               float sunInfluence = pow(max(dot(dir, sunDir), 0.0), 2.5) * 0.55 + 0.45;
+              vec3 cloudColor = mix(cloudBright, cloudDark, shadowFactor * 0.7) * sunInfluence;
 
-              vec3 cloudColor = mix(cloudBright, cloudDark, shadowFactor * 0.7);
-              cloudColor *= sunInfluence;
-
-              // Silver lining / rim light on cloud edges
+              // Silver lining / rim light
               float rim = smoothstep(coverage + 0.05, coverage + 0.15, density);
               float rimLight = (1.0 - rim) * pow(sunDot, 4.0) * 0.6;
               cloudColor += uSunColor * rimLight;
@@ -290,7 +299,7 @@ export class WeatherManager {
               float horizDepth = 1.0 - smoothstep(0.05, 0.4, dir.y);
               cloudColor = mix(cloudColor, hazeColor, horizDepth * 0.45);
 
-              sky = mix(sky, cloudColor, cloudMask * 0.82);
+              sky = mix(sky, cloudColor, cloudMask * 0.7);
             }
           }
 
@@ -309,9 +318,8 @@ export class WeatherManager {
             sky += auroraColor * (curtain + shimmer) * 0.85;
           }
 
-          // Tone-mapping clamp to prevent bloom overflow
-          sky = sky / (sky + vec3(1.0)); // simple Reinhard
-          sky = pow(sky, vec3(1.0 / 2.2)) * 1.15; // gamma + slight exposure boost
+          // Safe HDR headroom — tonemapped by ACES in renderer
+          sky = min(sky, vec3(16.0));
 
           gl_FragColor = vec4(sky, 1.0);
         }
@@ -324,42 +332,13 @@ export class WeatherManager {
     this.scene.add(this.skyDome);
   }
 
-  // 2. 3D SUN (Visible Disc + Radiant Corona Halo)
+  // 2. 3D SUN (Atmospheric celestial body rendered in sky dome shader without billboard artifacts)
   initSun() {
     this.sunGroup = new THREE.Group();
-
-    // Core bright sun disc
-    const sunGeo = new THREE.SphereGeometry(45, 32, 32);
-    this.sunCoreMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    this.sunMesh = new THREE.Mesh(sunGeo, this.sunCoreMat);
-    this.sunGroup.add(this.sunMesh);
-
-    // Inner bright flare
-    const flareTex = this.createGlowTexture(0xffeedd, 0.95);
-    const flareMat = new THREE.SpriteMaterial({
-      map: flareTex,
-      transparent: true,
-      blending: THREE.AdditiveBlending
-    });
-    this.sunFlare = new THREE.Sprite(flareMat);
-    this.sunFlare.scale.set(240, 240, 1);
-    this.sunGroup.add(this.sunFlare);
-
-    // Outer atmospheric corona glow
-    const coronaTex = this.createGlowTexture(0xff7733, 0.7);
-    const coronaMat = new THREE.SpriteMaterial({
-      map: coronaTex,
-      transparent: true,
-      blending: THREE.AdditiveBlending
-    });
-    this.sunCorona = new THREE.Sprite(coronaMat);
-    this.sunCorona.scale.set(520, 520, 1);
-    this.sunGroup.add(this.sunCorona);
-
     this.scene.add(this.sunGroup);
   }
 
-  // 3. 3D MOON (Visible Crescent/Sphere + Silver Halo)
+  // 3. 3D MOON (Visible 3D Sphere with Lunar Maria Texture)
   initMoon() {
     this.moonGroup = new THREE.Group();
 
@@ -378,20 +357,9 @@ export class WeatherManager {
     }
     const moonTex = new THREE.CanvasTexture(moonCanvas);
 
-    const moonGeo = new THREE.SphereGeometry(32, 24, 24);
-    this.moonMesh = new THREE.Mesh(moonGeo, new THREE.MeshBasicMaterial({ map: moonTex }));
+    const moonGeo = new THREE.SphereGeometry(45, 24, 24);
+    this.moonMesh = new THREE.Mesh(moonGeo, new THREE.MeshBasicMaterial({ map: moonTex, fog: false }));
     this.moonGroup.add(this.moonMesh);
-
-    // Soft silver-cyan lunar halo
-    const moonHaloTex = this.createGlowTexture(0x99ccff, 0.75);
-    const moonHaloMat = new THREE.SpriteMaterial({
-      map: moonHaloTex,
-      transparent: true,
-      blending: THREE.AdditiveBlending
-    });
-    this.moonHalo = new THREE.Sprite(moonHaloMat);
-    this.moonHalo.scale.set(180, 180, 1);
-    this.moonGroup.add(this.moonHalo);
 
     this.scene.add(this.moonGroup);
   }
@@ -401,7 +369,6 @@ export class WeatherManager {
     const starCount = 2400;
     const starGeo = new THREE.BufferGeometry();
     const starPositions = new Float32Array(starCount * 3);
-    const starSizes = new Float32Array(starCount);
 
     for (let i = 0; i < starCount; i++) {
       // Upper hemisphere distribution
@@ -410,24 +377,37 @@ export class WeatherManager {
       const theta = u * 2.0 * Math.PI;
       const phi = Math.acos(2.0 * v - 1.0) * 0.48; // restrict to upper dome
 
-      const radius = 1150;
+      const radius = 2450;
       starPositions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
       starPositions[i * 3 + 1] = radius * Math.cos(phi) + 20; // above horizon
       starPositions[i * 3 + 2] = radius * Math.sin(phi) * Math.sin(theta);
-
-      // Random star magnitudes
-      starSizes[i] = 1.0 + Math.random() * 2.5;
     }
 
     starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
-    starGeo.setAttribute('aSize', new THREE.BufferAttribute(starSizes, 1));
+
+    // Circular soft-dot texture for stars (prevents square rendering)
+    const starCanvas = document.createElement('canvas');
+    starCanvas.width = 64; starCanvas.height = 64;
+    const sctx = starCanvas.getContext('2d');
+    const starGrad = sctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+    starGrad.addColorStop(0.0, 'rgba(255, 255, 255, 1.0)');
+    starGrad.addColorStop(0.15, 'rgba(255, 255, 255, 0.9)');
+    starGrad.addColorStop(0.5, 'rgba(200, 220, 255, 0.3)');
+    starGrad.addColorStop(1.0, 'rgba(200, 220, 255, 0.0)');
+    sctx.fillStyle = starGrad;
+    sctx.fillRect(0, 0, 64, 64);
+    const starTexture = new THREE.CanvasTexture(starCanvas);
 
     this.starMat = new THREE.PointsMaterial({
       color: 0xffffff,
-      size: 2.2,
+      size: 3.0,
+      map: starTexture,
       transparent: true,
       opacity: 0.0,
-      depthWrite: false
+      depthWrite: false,
+      sizeAttenuation: true,
+      blending: THREE.AdditiveBlending,
+      fog: false
     });
 
     this.stars = new THREE.Points(starGeo, this.starMat);
@@ -457,22 +437,20 @@ export class WeatherManager {
     this.skyMat.uniforms.uSunDir.value.set(...preset.sunPosition).normalize();
     this.skyMat.uniforms.uAurora.value = preset.bioluminescence ? 1.0 : 0.0;
 
-    // 4. Sun Object
-    const sunDir = new THREE.Vector3(...preset.sunPosition).normalize();
-    this.sunGroup.position.copy(sunDir.clone().multiplyScalar(1050));
-    this.sunCoreMat.color.setHex(preset.sunColor);
-    this.sunFlare.material.color.setHex(preset.sunGlowColor || preset.sunColor);
-    this.sunCorona.material.color.setHex(preset.sunGlowColor || preset.sunColor);
+    if (preset.moonPosition) {
+      this.skyMat.uniforms.uMoonDir.value.set(...preset.moonPosition).normalize();
+      this.skyMat.uniforms.uMoonIntensity.value = preset.moonIntensity || 0.0;
+    }
 
-    const isSunVisible = preset.sunPosition[1] > 0;
+    // 4. Sun Object
+    const isSunVisible = preset.sunPosition && preset.sunPosition[1] > 0;
     this.sunGroup.visible = isSunVisible;
 
     // 5. Moon Object
     const moonDir = new THREE.Vector3(...preset.moonPosition).normalize();
-    this.moonGroup.position.copy(moonDir.clone().multiplyScalar(1050));
+    this.moonGroup.position.copy(moonDir.clone().multiplyScalar(2300));
     const isMoonVisible = preset.moonPosition[1] > 0;
     this.moonGroup.visible = isMoonVisible;
-    this.moonHalo.material.opacity = preset.moonIntensity > 0 ? 0.8 : 0.0;
 
     // 6. Stars
     this.starMat.opacity = preset.starsOpacity || 0.0;
@@ -499,10 +477,10 @@ export class WeatherManager {
 
       // Keep Sun & Moon relative to ship
       const sunDir = new THREE.Vector3(...this.currentPreset.sunPosition).normalize();
-      this.sunGroup.position.copy(shipPosition).add(sunDir.multiplyScalar(1050));
+      this.sunGroup.position.copy(shipPosition).add(sunDir.multiplyScalar(2300));
 
       const moonDir = new THREE.Vector3(...this.currentPreset.moonPosition).normalize();
-      this.moonGroup.position.copy(shipPosition).add(moonDir.multiplyScalar(1050));
+      this.moonGroup.position.copy(shipPosition).add(moonDir.multiplyScalar(2300));
 
       // Update sun shadow target to stay locked on ship
       this.sunLight.target.position.copy(shipPosition);

@@ -7,7 +7,7 @@ export class Ocean {
   constructor(scene, initialWeather) {
     this.scene = scene;
     this.weather = initialWeather;
-    this.gridSize = 2500;
+    this.gridSize = 3000;
     this.segments = 256;
 
     this.initMesh();
@@ -51,6 +51,7 @@ export class Ocean {
         varying vec3 vNormal;
         varying float vCrest;
         varying float vDist;
+        varying float vEdgeAlpha;
 
         void main() {
           vec3 worldPos = (modelMatrix * vec4(position, 1.0)).xyz;
@@ -60,9 +61,9 @@ export class Ocean {
 
           evaluateGerstner(worldPos, uTime, displacedPos, displacedNormal, crest);
 
-          // Smoothly fade waves to flat plane near the distant boundary
-          float r = length(worldPos.xz);
-          float edgeFade = 1.0 - smoothstep(750.0, 1180.0, r);
+          // Smoothly fade waves to flat plane near the mesh boundary using local geometry radius
+          float r = length(position.xz);
+          float edgeFade = 1.0 - smoothstep(950.0, 1420.0, r);
           displacedPos.y *= edgeFade;
           displacedPos.xz = mix(worldPos.xz, displacedPos.xz, edgeFade);
 
@@ -70,6 +71,7 @@ export class Ocean {
           vNormal = mix(vec3(0.0, 1.0, 0.0), displacedNormal, edgeFade);
           vCrest = crest * edgeFade;
           vDist = length(cameraPosition - displacedPos);
+          vEdgeAlpha = 1.0 - smoothstep(1250.0, 1480.0, r);
 
           gl_Position = projectionMatrix * viewMatrix * vec4(displacedPos, 1.0);
         }
@@ -90,6 +92,7 @@ export class Ocean {
         varying vec3 vNormal;
         varying float vCrest;
         varying float vDist;
+        varying float vEdgeAlpha;
 
         // ── Non-repeating Value Noise (Quintic Hermite) ──
         // Uses large prime-based hashing to prevent visible tiling
@@ -285,15 +288,21 @@ export class Ocean {
           }
 
           // ── Atmospheric horizon blending ──
-          float fogFactor = clamp((vDist - 180.0) / 1100.0, 0.0, 1.0);
-          fogFactor = fogFactor * fogFactor; // quadratic curve
-          finalColor = mix(finalColor, uHorizonColor, fogFactor);
+          // Seamlessly blend ocean into the exact horizon sky color with solar haze
+          float fogFactor = clamp((vDist - 250.0) / 1050.0, 0.0, 1.0);
+          fogFactor = fogFactor * fogFactor * (3.0 - 2.0 * fogFactor); // smoothstep curve
 
-          gl_FragColor = vec4(finalColor, 0.97);
+          // Towards the sun, horizon atmospheric haze takes on warm solar scattering
+          float sunHaze = pow(max(dot(viewDir, lightDir), 0.0), 3.0);
+          vec3 horizonTarget = mix(uHorizonColor, uSunColor, sunHaze * 0.25);
+
+          finalColor = mix(finalColor, horizonTarget, fogFactor);
+
+          gl_FragColor = vec4(finalColor, vEdgeAlpha);
         }
       `,
       transparent: true,
-      side: THREE.DoubleSide
+      side: THREE.FrontSide
     });
 
     this.mesh = new THREE.Mesh(geometry, material);

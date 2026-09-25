@@ -51,24 +51,24 @@ export const WEATHER_PRESETS = {
   sunset: {
     id: 'sunset',
     name: 'Golden Hour',
-    skyTopColor: 0x1a1230,     // Twilight deep indigo purple
-    skyHorizonColor: 0xff5511, // Glowing warm sunset horizon
-    sunColor: 0xff8833,        // Radiant golden orange
-    sunGlowColor: 0xff4411,
-    sunIntensity: 2.6,
+    skyTopColor: 0x4477bb,     // Bright twilight blue (survives sRGB linearization)
+    skyHorizonColor: 0xdd6633, // Warm amber sunset horizon (not pure red)
+    sunColor: 0xffbb55,        // Golden amber sunlight
+    sunGlowColor: 0xff7733,
+    sunIntensity: 2.2,
     sunPosition: [110, 85, 480],
     moonPosition: [-240, 160, -380],
     moonIntensity: 0.25,
-    ambientColor: 0x7a3a2e,
-    ambientIntensity: 0.65,
-    waterDeepColor: [0.015, 0.035, 0.07], // Authentic deep twilight ocean
-    waterShallowColor: [0.10, 0.06, 0.05], // Warm ambient surface
+    ambientColor: 0x6a4a3e,
+    ambientIntensity: 0.6,
+    waterDeepColor: [0.01, 0.04, 0.10],   // Deep ocean blue-black
+    waterShallowColor: [0.05, 0.10, 0.12], // Dark teal-blue surface
     foamColor: [1.0, 0.92, 0.85],
     waveScale: 0.82,
     windSpeedKnots: 16,
-    fogColor: 0xd95026,
-    fogDensity: 0.0009,
-    starsOpacity: 0.2,
+    fogColor: 0x7a4835,        // Muted warm brown fog
+    fogDensity: 0.0006,
+    starsOpacity: 0.25,
     rain: false,
     lightning: false,
     bioluminescence: false

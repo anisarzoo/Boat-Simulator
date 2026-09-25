@@ -11,9 +11,23 @@ export class SeagullFlock {
   }
 
   initFlock() {
-    const matFeather = new THREE.MeshBasicMaterial({ color: 0xf5f8fa, side: THREE.DoubleSide });
-    const matWingTips = new THREE.MeshBasicMaterial({ color: 0x242d38, side: THREE.DoubleSide });
-    const matBeak = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
+    const matFeather = new THREE.MeshStandardMaterial({
+      color: 0xdde2ea,
+      roughness: 0.75,
+      metalness: 0.05,
+      side: THREE.DoubleSide
+    });
+    const matWingTips = new THREE.MeshStandardMaterial({
+      color: 0x1e242c,
+      roughness: 0.7,
+      metalness: 0.1,
+      side: THREE.DoubleSide
+    });
+    const matBeak = new THREE.MeshStandardMaterial({
+      color: 0xee8800,
+      roughness: 0.5,
+      metalness: 0.2
+    });
 
     for (let i = 0; i < this.count; i++) {
       const bird = new THREE.Group();

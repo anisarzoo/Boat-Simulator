@@ -112,12 +112,27 @@ export class ParticleSystem {
 
     rainGeo.setAttribute('position', new THREE.BufferAttribute(rainPositions, 3));
 
+    // Raindrop texture — soft elongated dot
+    const rainCanvas = document.createElement('canvas');
+    rainCanvas.width = 16; rainCanvas.height = 32;
+    const rctx = rainCanvas.getContext('2d');
+    const rainGrad = rctx.createLinearGradient(8, 0, 8, 32);
+    rainGrad.addColorStop(0.0, 'rgba(180, 210, 230, 0.0)');
+    rainGrad.addColorStop(0.3, 'rgba(180, 210, 230, 0.7)');
+    rainGrad.addColorStop(0.7, 'rgba(200, 220, 240, 0.9)');
+    rainGrad.addColorStop(1.0, 'rgba(200, 220, 240, 0.0)');
+    rctx.fillStyle = rainGrad;
+    rctx.fillRect(4, 0, 8, 32);
+    const rainTexture = new THREE.CanvasTexture(rainCanvas);
+
     this.rainMat = new THREE.PointsMaterial({
       color: 0x9cb5c9,
-      size: 0.85,
+      size: 0.6,
+      map: rainTexture,
       transparent: true,
       opacity: 0.0,
-      depthWrite: false
+      depthWrite: false,
+      sizeAttenuation: true
     });
 
     this.rainPoints = new THREE.Points(rainGeo, this.rainMat);
