@@ -1,4 +1,4 @@
-// Ocean mesh and custom Gerstner wave shader material — Ultra-Realistic PBR Water
+// Ocean mesh, Gerstner wave shader, underwater Snell's optics & bathymetric depth floor
 import * as THREE from 'three';
 import { BASE_WAVES } from './constants.js';
 import { computeWaveSpecs, getGerstnerGLSL } from './gerstner.js';
@@ -11,6 +11,7 @@ export class Ocean {
     this.segments = 256;
 
     this.initMesh();
+    this.initAbyssFloor();
   }
 
   initMesh() {
@@ -95,7 +96,6 @@ export class Ocean {
         varying float vEdgeAlpha;
 
         // ── Non-repeating Value Noise (Quintic Hermite) ──
-        // Uses large prime-based hashing to prevent visible tiling
         vec2 hash2(vec2 p) {
           p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
           return -1.0 + 2.0 * fract(sin(p) * 43758.5453123);
@@ -115,13 +115,9 @@ export class Ocean {
         }
 
         // ── Multi-scale Detail Normal from analytical noise derivatives ──
-        // Each octave uses a different rotation matrix to break axis alignment
         vec3 getDetailNormal(vec2 pos, float time, float lod) {
           vec2 dN = vec2(0.0);
-          float eps = 0.08;
 
-          // 6 directional wave trains at different scales and speeds
-          // Using irrational multipliers to prevent alignment
           vec2 dirs[6];
           dirs[0] = vec2(0.809, 0.588);
           dirs[1] = vec2(-0.656, 0.755);
@@ -154,7 +150,6 @@ export class Ocean {
           amps[4] = 0.014;
           amps[5] = 0.007;
 
-          // LOD: skip high-frequency octaves at distance
           int maxOctaves = int(mix(6.0, 2.0, clamp(lod, 0.0, 1.0)));
 
           for (int i = 0; i < 6; i++) {
@@ -166,7 +161,7 @@ export class Ocean {
           return normalize(vec3(-dN.x, 1.0, -dN.y));
         }
 
-        // ── Worley (cellular) noise for organic foam patterns ──
+        // ── Worley cellular noise for foam ──
         float worley(vec2 p) {
           vec2 n = floor(p);
           vec2 f = fract(p);
@@ -183,11 +178,11 @@ export class Ocean {
           return sqrt(minDist);
         }
 
-        // ── Multi-octave fBm with domain rotation to break tiling ──
+        // ── Multi-octave fBm with domain rotation ──
         float fbm(vec2 p) {
           float v = 0.0;
           float a = 0.5;
-          mat2 rot = mat2(0.8, 0.6, -0.6, 0.8); // 36.87° rotation
+          mat2 rot = mat2(0.8, 0.6, -0.6, 0.8);
           for (int i = 0; i < 5; i++) {
             v += a * gradientNoise(p);
             p = rot * p * 2.03 + vec2(1.7, 0.9);
@@ -197,6 +192,9 @@ export class Ocean {
         }
 
         void main() {
+          // Detect viewing orientation (double-sided rendering)
+          bool isUnderside = !gl_FrontFacing;
+
           // LOD factor for detail culling at distance
           float lodFactor = clamp((vDist - 30.0) / 350.0, 0.0, 1.0);
 
@@ -208,6 +206,63 @@ export class Ocean {
 
           vec3 viewDir = normalize(cameraPosition - vWorldPos);
           vec3 lightDir = normalize(uSunPosition - vWorldPos);
+
+          // ── UNDERWATER OPTICS: SNELL'S WINDOW & TIR (When viewed from underneath) ──
+          if (isUnderside) {
+            vec3 N = -normal; // Orient normal towards the underwater observer
+            float cosTheta = clamp(dot(N, viewDir), 0.0, 1.0);
+
+            vec3 underColor;
+
+            // Snell's critical angle: water (1.333) to air (1.0) -> critical angle ~48.6° (cos ~0.66)
+            if (cosTheta > 0.62) {
+              // Inside Snell's Window: observer sees the refracted sky & celestial bodies above
+              vec3 refr = refract(-viewDir, N, 1.333 / 1.0);
+              float skyH = clamp(refr.y, 0.0, 1.0);
+              vec3 skyLook = mix(uHorizonColor, uTopSkyColor, pow(skyH, 0.42));
+
+              // Refracted sun glint through the surface
+              float sunDot = max(dot(refr, lightDir), 0.0);
+              skyLook += uSunColor * (pow(sunDot, 32.0) * 0.7 + pow(sunDot, 128.0) * 1.8) * (uSunIntensity * 0.4);
+
+              // Water extinction filter (Beer-Lambert law: red/amber light attenuated)
+              vec3 waterFilter = mix(uShallowColor * 1.8, uDeepColor * 2.4, 0.45);
+              vec3 transmitted = skyLook * waterFilter;
+
+              // Fresnel reflection on underside
+              float fUnder = 0.02 + 0.98 * pow(1.0 - cosTheta, 5.0);
+              vec3 deepWaterReflect = uDeepColor * 0.4;
+              underColor = mix(transmitted, deepWaterReflect, fUnder);
+            } else {
+              // Outside Snell's Window: Total Internal Reflection (TIR)
+              // Acts as a watery mirror reflecting the deep water column
+              vec3 R_under = reflect(-viewDir, N);
+              float downward = clamp(-R_under.y, 0.0, 1.0);
+              underColor = mix(uDeepColor * 0.32, uShallowColor * 0.22, downward * 0.5);
+            }
+
+            // Refractive caustic bands dancing along underside of wave crests
+            float causticRipples = gradientNoise(vWorldPos.xz * 0.22 + vec2(uTime * 0.35, -uTime * 0.25));
+            causticRipples = pow(causticRipples * 0.5 + 0.5, 3.0);
+            underColor += uShallowColor * causticRipples * 0.4 * max(uSunIntensity, 0.4);
+
+            // Foam silhouettes visible from underneath
+            if (vCrest > 0.35) {
+              float foamSilhouette = smoothstep(0.35, 0.8, vCrest);
+              vec3 foamUnder = mix(uFoamColor * 0.45, uShallowColor * 0.7, 0.5);
+              underColor = mix(underColor, foamUnder, foamSilhouette * 0.65);
+            }
+
+            // Underwater distance absorption fog to deep abyss
+            float underFog = clamp((vDist - 60.0) / 650.0, 0.0, 1.0);
+            underFog = underFog * underFog * (3.0 - 2.0 * underFog);
+            underColor = mix(underColor, uDeepColor * 0.22, underFog);
+
+            gl_FragColor = vec4(underColor, vEdgeAlpha);
+            return;
+          }
+
+          // ── SURFACE OPTICS (When viewed from above) ──
           vec3 R = reflect(-viewDir, normal);
 
           // Physically accurate Schlick Fresnel (F0 = 0.02 for water IOR 1.333)
@@ -247,10 +302,8 @@ export class Ocean {
           float crestThick = clamp(vCrest * 2.0 + (vWorldPos.y + 1.5) * 0.3, 0.0, 2.0);
           vec3 sssColor = mix(uShallowColor, uSunColor, 0.7) * forwardScatter * crestThick * 1.2;
 
-          // ── Depth-dependent water body color ──
-          // Uses world-space noise to break visual monotony across the ocean
+          // ── Volumetric water body with depth variation ──
           float heightFactor = clamp((vWorldPos.y + 2.8) / 5.6, 0.0, 1.0);
-          // Add large-scale color variation using slow-moving noise
           float colorVar = fbm(vWorldPos.xz * 0.0018 + vec2(uTime * 0.003)) * 0.15;
           vec3 waterBody = mix(uDeepColor * (1.0 - colorVar), uShallowColor * (1.0 + colorVar * 0.5), heightFactor);
 
@@ -259,22 +312,18 @@ export class Ocean {
 
           // ── Organic Foam using Worley noise cells ──
           if (vCrest > 0.35) {
-            // Multi-scale cellular foam pattern
             float w1 = worley(vWorldPos.xz * 0.8 + vec2(uTime * 0.15, -uTime * 0.08));
             float w2 = worley(vWorldPos.xz * 2.4 - vec2(uTime * 0.22, uTime * 0.12));
             float w3 = worley(vWorldPos.xz * 6.0 + vec2(-uTime * 0.3, uTime * 0.18));
 
-            // Organic foam cells: thin veins between Voronoi regions
             float foamCells = (1.0 - smoothstep(0.0, 0.25, w1)) * 0.5
                             + (1.0 - smoothstep(0.0, 0.15, w2)) * 0.3
                             + (1.0 - smoothstep(0.0, 0.10, w3)) * 0.2;
 
-            // Large-scale noise modulation to prevent uniform foam coverage
             float foamMod = fbm(vWorldPos.xz * 0.06 + vec2(uTime * 0.02));
             foamCells *= smoothstep(0.3, 0.6, foamMod);
 
             float foamMask = smoothstep(0.35, 0.80, vCrest) * foamCells;
-            // Foam is slightly bluish-white, not pure white
             vec3 foam = uFoamColor * (0.85 + foamMask * 0.15);
             finalColor = mix(finalColor, foam, clamp(foamMask * 0.9, 0.0, 1.0));
           }
@@ -288,11 +337,9 @@ export class Ocean {
           }
 
           // ── Atmospheric horizon blending ──
-          // Seamlessly blend ocean into the exact horizon sky color with solar haze
           float fogFactor = clamp((vDist - 250.0) / 1050.0, 0.0, 1.0);
-          fogFactor = fogFactor * fogFactor * (3.0 - 2.0 * fogFactor); // smoothstep curve
+          fogFactor = fogFactor * fogFactor * (3.0 - 2.0 * fogFactor);
 
-          // Towards the sun, horizon atmospheric haze takes on warm solar scattering
           float sunHaze = pow(max(dot(viewDir, lightDir), 0.0), 3.0);
           vec3 horizonTarget = mix(uHorizonColor, uSunColor, sunHaze * 0.25);
 
@@ -302,12 +349,118 @@ export class Ocean {
         }
       `,
       transparent: true,
-      side: THREE.FrontSide
+      side: THREE.DoubleSide
     });
 
     this.mesh = new THREE.Mesh(geometry, material);
     this.mesh.receiveShadow = true;
     this.scene.add(this.mesh);
+  }
+
+  // ── Bathymetric Seabed Floor (Abyss depth mesh eliminating hollow look from below) ──
+  initAbyssFloor() {
+    const geo = new THREE.PlaneGeometry(3200, 3200, 128, 128);
+    geo.rotateX(-Math.PI / 2);
+
+    const uniforms = {
+      uTime: { value: 0 },
+      uDeepColor: { value: new THREE.Vector3(...this.weather.waterDeepColor) },
+      uShallowColor: { value: new THREE.Vector3(...this.weather.waterShallowColor) },
+      uSunPosition: { value: new THREE.Vector3(...this.weather.sunPosition) },
+      uSunColor: { value: new THREE.Color(this.weather.sunColor) },
+      uSunIntensity: { value: this.weather.sunIntensity }
+    };
+
+    const mat = new THREE.ShaderMaterial({
+      uniforms,
+      vertexShader: `
+        varying vec3 vWorldPos;
+        varying float vDist;
+        varying float vEdgeAlpha;
+
+        void main() {
+          vec3 pos = position;
+          // Continental shelf undulating bathymetric dunes & trenches
+          float b1 = sin(pos.x * 0.004) * cos(pos.z * 0.004) * 9.0;
+          float b2 = sin(pos.x * 0.011 + pos.z * 0.007) * 4.5;
+          pos.y += b1 + b2;
+
+          vec4 wp = modelMatrix * vec4(pos, 1.0);
+          vWorldPos = wp.xyz;
+          vDist = length(cameraPosition - vWorldPos);
+
+          float r = length(position.xz);
+          vEdgeAlpha = 1.0 - smoothstep(1100.0, 1500.0, r);
+
+          gl_Position = projectionMatrix * viewMatrix * wp;
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 uDeepColor;
+        uniform vec3 uShallowColor;
+        uniform vec3 uSunPosition;
+        uniform vec3 uSunColor;
+        uniform float uSunIntensity;
+        uniform float uTime;
+
+        varying vec3 vWorldPos;
+        varying float vDist;
+        varying float vEdgeAlpha;
+
+        vec2 hash2(vec2 p) {
+          p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
+          return -1.0 + 2.0 * fract(sin(p) * 43758.5453123);
+        }
+
+        float gnoise(vec2 p) {
+          vec2 i = floor(p);
+          vec2 f = fract(p);
+          vec2 u = f * f * (3.0 - 2.0 * f);
+          return mix(
+            mix(dot(hash2(i + vec2(0.0, 0.0)), f - vec2(0.0, 0.0)),
+                dot(hash2(i + vec2(1.0, 0.0)), f - vec2(1.0, 0.0)), u.x),
+            mix(dot(hash2(i + vec2(0.0, 1.0)), f - vec2(0.0, 1.0)),
+                dot(hash2(i + vec2(1.0, 1.0)), f - vec2(1.0, 1.0)), u.x), u.y
+          );
+        }
+
+        void main() {
+          // Seabed floor base tone: abyssal deep sediment
+          vec3 floorBase = uDeepColor * 0.32;
+          float floorSand = gnoise(vWorldPos.xz * 0.02) * 0.05;
+          floorBase += vec3(floorSand);
+
+          // Deep caustics shimmering down onto the ocean floor
+          vec2 c1 = vWorldPos.xz * 0.05 + vec2(uTime * 0.18, uTime * 0.12);
+          vec2 c2 = vWorldPos.xz * 0.09 - vec2(uTime * 0.15, -uTime * 0.22);
+          vec2 c3 = vWorldPos.xz * 0.15 + vec2(-uTime * 0.26, uTime * 0.19);
+
+          float n1 = gnoise(c1);
+          float n2 = gnoise(c2);
+          float n3 = gnoise(c3);
+
+          float causticWeb = pow(max(0.0, 1.0 - abs(n1 + n2 * 0.7 + n3 * 0.4)), 3.2);
+          vec3 causticColor = mix(uShallowColor, uSunColor, 0.4) * causticWeb * (max(uSunIntensity, 0.35) * 0.55);
+
+          vec3 color = floorBase + causticColor;
+
+          // Volumetric underwater absorption fog (Beer-Lambert attenuation)
+          float fog = clamp((vDist - 30.0) / 450.0, 0.0, 1.0);
+          fog = fog * fog * (3.0 - 2.0 * fog);
+          vec3 abyssalWater = uDeepColor * 0.16;
+          color = mix(color, abyssalWater, fog);
+
+          gl_FragColor = vec4(color, vEdgeAlpha);
+        }
+      `,
+      transparent: true,
+      depthWrite: true,
+      side: THREE.FrontSide
+    });
+
+    this.abyssMesh = new THREE.Mesh(geo, mat);
+    this.abyssMesh.position.set(0, -65, 0);
+    this.scene.add(this.abyssMesh);
   }
 
   setWeather(weather) {
@@ -332,10 +485,21 @@ export class Ocean {
     this.mesh.material.uniforms.uTopSkyColor.value.set(weather.skyTopColor);
     this.mesh.material.uniforms.uHorizonColor.value.set(weather.skyHorizonColor);
     this.mesh.material.uniforms.uBioluminescence.value = weather.bioluminescence ? 1.0 : 0.0;
+
+    if (this.abyssMesh) {
+      this.abyssMesh.material.uniforms.uDeepColor.value.set(...weather.waterDeepColor);
+      this.abyssMesh.material.uniforms.uShallowColor.value.set(...weather.waterShallowColor);
+      this.abyssMesh.material.uniforms.uSunPosition.value.set(...weather.sunPosition);
+      this.abyssMesh.material.uniforms.uSunColor.value.set(weather.sunColor);
+      this.abyssMesh.material.uniforms.uSunIntensity.value = weather.sunIntensity;
+    }
   }
 
   update(time, shipPosition) {
     this.mesh.material.uniforms.uTime.value = time;
+    if (this.abyssMesh) {
+      this.abyssMesh.material.uniforms.uTime.value = time;
+    }
 
     // Follow the ship smoothly in discrete steps to prevent vertex popping
     if (shipPosition) {
@@ -343,6 +507,9 @@ export class Ocean {
       const snapX = Math.floor(shipPosition.x / snap) * snap;
       const snapZ = Math.floor(shipPosition.z / snap) * snap;
       this.mesh.position.set(snapX, 0, snapZ);
+      if (this.abyssMesh) {
+        this.abyssMesh.position.set(snapX, -65, snapZ);
+      }
     }
   }
 }

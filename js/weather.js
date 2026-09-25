@@ -228,6 +228,13 @@ export class WeatherManager {
           float midBand = exp(-pow((h - 0.25) * 3.5, 2.0));
           sky = mix(sky, midTint, midBand * 0.25);
 
+          // Subterranean ocean abyss: smoothly transition to deep ocean floor color below horizon
+          if (dir.y < 0.0) {
+            float abyssFactor = clamp(-dir.y * 3.2, 0.0, 1.0);
+            vec3 abyssColor = vec3(0.003, 0.010, 0.022);
+            sky = mix(uBottomColor * 0.75, abyssColor, abyssFactor);
+          }
+
           // ── Physically Inspired Solar Disc & Mie Atmospheric Scattering ──
           vec3 sunDir = normalize(uSunDir);
           float sunDot = max(dot(dir, sunDir), 0.0);

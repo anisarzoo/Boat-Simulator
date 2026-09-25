@@ -168,6 +168,7 @@ class App {
       if (e.key === '2') this.setCamera('bridge');
       if (e.key === '3') this.setCamera('orbit');
       if (e.key === '4') this.setCamera('bow');
+      if (e.key === '5') this.setCamera('underwater');
       if (e.key === 'f' || e.key === 'F') {
         if (!document.fullscreenElement) {
           document.documentElement.requestFullscreen().catch(() => {});
@@ -202,8 +203,8 @@ class App {
       this.orbitAngles.yaw -= dx * 0.006;
       this.orbitAngles.pitch = THREE.MathUtils.clamp(
         this.orbitAngles.pitch + dy * 0.004,
-        -0.2,
-        0.85
+        -0.55,
+        1.15
       );
     });
 
@@ -287,14 +288,14 @@ class App {
       this.camera.lookAt(bridgeLook);
 
     } else if (this.camMode === 'orbit') {
-      // Free drone orbit around ship
+      // Free drone orbit around ship (allows seamless above & below water exploration)
       const dist = this.orbitAngles.distance * 1.4;
       const x = shipPos.x + Math.sin(this.orbitAngles.yaw) * Math.cos(this.orbitAngles.pitch) * dist;
-      const y = shipPos.y + Math.max(2.0, Math.sin(this.orbitAngles.pitch) * dist + 8.0);
+      const y = shipPos.y + Math.sin(this.orbitAngles.pitch) * dist + 2.5;
       const z = shipPos.z + Math.cos(this.orbitAngles.yaw) * Math.cos(this.orbitAngles.pitch) * dist;
 
       this.camera.position.set(x, y, z);
-      this.camera.lookAt(shipPos.clone().add(new THREE.Vector3(0, 2, 0)));
+      this.camera.lookAt(shipPos.clone().add(new THREE.Vector3(0, 1.5, 0)));
 
     } else if (this.camMode === 'bow') {
       // Low angle waterline spray camera looking back at the ship slicing waves
@@ -304,6 +305,15 @@ class App {
 
       this.camera.position.copy(bowPos);
       this.camera.lookAt(shipPos.clone().add(new THREE.Vector3(0, 3.0, -2.0)));
+
+    } else if (this.camMode === 'underwater') {
+      // Sub-surface keel perspective looking up at the hull, props, waves & Snell's window
+      const underPos = shipPos.clone()
+        .sub(forward.clone().multiplyScalar(9.0))
+        .add(new THREE.Vector3(0, -4.5, 0));
+
+      this.camera.position.copy(underPos);
+      this.camera.lookAt(shipPos.clone().add(new THREE.Vector3(0, -0.6, 3.5)));
     }
   }
 
@@ -313,6 +323,19 @@ class App {
     let dt = this.clock.getDelta();
     dt = Math.min(dt, 0.05); // Clamp frame delta to prevent physics jumps
     this.time += dt;
+
+    // Dynamic underwater atmosphere transition
+    if (this.scene.fog) {
+      const isUnderwater = this.camera.position.y < -0.2;
+      if (isUnderwater) {
+        const deepCol = this.weather.currentPreset.waterDeepColor;
+        this.scene.fog.color.setRGB(deepCol[0] * 1.5, deepCol[1] * 2.0, deepCol[2] * 2.5);
+        this.scene.fog.density = 0.016;
+      } else {
+        this.scene.fog.color.set(this.weather.currentPreset.fogColor);
+        this.scene.fog.density = this.weather.currentPreset.fogDensity;
+      }
+    }
 
     // 1. Process player inputs
     this.handleControls();
@@ -346,7 +369,7 @@ class App {
 
     // 7. Update Navigation Buoys, Seagull Flock, and Drifting Clouds
     this.buoys.update(dt, this.time, this.weather.currentPreset.waveScale, this.ship.group.position);
-    this.seagulls.update(dt, this.time, this.ship.group.position);
+    this.seagulls.update(dt, this.time, this.ship.group.position, this.ship.group.quaternion, this.physics.speedKnots);
     this.clouds.update(dt, this.time, this.ship.group.position);
 
     // 8. Update Procedural Audio
