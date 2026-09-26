@@ -1,6 +1,7 @@
 // AI Marine Traffic System: Container Ships, Commercial Fishing Trawlers, and Sailing Yachts
 // with COLREGs Navigation Lighting, Radar Target Telemetry, and Horn Echo Responses
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 export class MarineTraffic {
   constructor(scene) {
@@ -147,61 +148,225 @@ export class MarineTraffic {
     const group = new THREE.Group();
 
     const matHull = new THREE.MeshStandardMaterial({
-      color: 0x1f3a52, // Deep sea blue workboat hull
-      roughness: 0.65,
-      metalness: 0.1
+      color: 0x122232, // Deep sea navy workboat hull
+      roughness: 0.55,
+      metalness: 0.15
+    });
+    const matKeel = new THREE.MeshStandardMaterial({
+      color: 0x8a1c14, // Anti-fouling red bottom
+      roughness: 0.65
+    });
+    const matBootStripe = new THREE.MeshStandardMaterial({
+      color: 0xf0f2f5,
+      roughness: 0.4
     });
     const matCabin = new THREE.MeshStandardMaterial({
       color: 0xeeeeee,
+      roughness: 0.4
+    });
+    const matCabinRoof = new THREE.MeshStandardMaterial({
+      color: 0x224466,
       roughness: 0.5
     });
     const matWoodDeck = new THREE.MeshStandardMaterial({
-      color: 0x8d6e63,
-      roughness: 0.8
+      color: 0x7a5a3a,
+      roughness: 0.85
     });
     const matGantry = new THREE.MeshStandardMaterial({
       color: 0xff9800, // Safety orange crane/gantry
       roughness: 0.4
     });
+    const matSteel = new THREE.MeshStandardMaterial({
+      color: 0x55606c,
+      roughness: 0.35,
+      metalness: 0.8
+    });
+    const matRubber = new THREE.MeshStandardMaterial({
+      color: 0x111316,
+      roughness: 0.9
+    });
+    const matGlass = new THREE.MeshStandardMaterial({
+      color: 0x081520,
+      roughness: 0.05,
+      metalness: 0.9,
+      transparent: true,
+      opacity: 0.8
+    });
 
-    // Hull (26m x 7.2m x 4m)
-    const hull = new THREE.Mesh(new THREE.BoxGeometry(7.2, 3.8, 25), matHull);
-    hull.position.set(0, 1.9, 0);
+    // 1. Lower Keel (Red anti-fouling)
+    const keel = new THREE.Mesh(new THREE.BoxGeometry(6.6, 1.8, 23.5), matKeel);
+    keel.position.set(0, 0.9, -0.2);
+    group.add(keel);
+
+    // 2. Main Topsides Hull
+    const hull = new THREE.Mesh(new THREE.BoxGeometry(7.4, 2.2, 24.5), matHull);
+    hull.position.set(0, 2.7, -0.2);
     group.add(hull);
 
-    const deck = new THREE.Mesh(new THREE.BoxGeometry(6.9, 0.2, 24.6), matWoodDeck);
-    deck.position.set(0, 3.8, 0);
-    group.add(deck);
+    // Waterline boot-top stripe
+    const bootStripe = new THREE.Mesh(new THREE.BoxGeometry(7.48, 0.28, 24.4), matBootStripe);
+    bootStripe.position.set(0, 1.8, -0.2);
+    group.add(bootStripe);
 
-    // Forward Wheelhouse & Crew Quarters
-    const cabin = new THREE.Mesh(new THREE.BoxGeometry(5.8, 4.2, 8.5), matCabin);
-    cabin.position.set(0, 5.8, 4.5);
-    group.add(cabin);
-
-    // Trawl Net Winch Gantry A-Frame (Aft)
-    for (const sx of [-2.8, 2.8]) {
-      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 7.5), matGantry);
-      leg.rotation.x = -0.15;
-      leg.position.set(sx, 7.2, -8.5);
-      group.add(leg);
+    // Heavy rubber rub-rail
+    for (const sx of [-3.75, 3.75]) {
+      const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 24.2, 8), matRubber);
+      rail.rotation.x = Math.PI / 2;
+      rail.position.set(sx, 3.65, -0.2);
+      group.add(rail);
     }
-    const crossbar = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 5.8), matGantry);
+
+    // 3. Decks & Solid Bulwarks
+    // Raised Forecastle (Bow)
+    const fDeck = new THREE.Mesh(new THREE.BoxGeometry(6.4, 0.2, 7.5), matWoodDeck);
+    fDeck.position.set(0, 4.2, 8.5);
+    group.add(fDeck);
+
+    // Main Aft Working Deck
+    const wDeck = new THREE.Mesh(new THREE.BoxGeometry(7.0, 0.2, 16.5), matWoodDeck);
+    wDeck.position.set(0, 2.6, -3.8);
+    group.add(wDeck);
+
+    // Solid Protective Bulwarks (1.1m high around main deck)
+    for (const sx of [-3.55, 3.55]) {
+      const bulwark = new THREE.Mesh(new THREE.BoxGeometry(0.18, 1.1, 16.5), matHull);
+      bulwark.position.set(sx, 3.2, -3.8);
+      group.add(bulwark);
+    }
+    // Forecastle bulwarks
+    for (const sx of [-2.85, 2.85]) {
+      const fBulwark = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.9, 7.5), matHull);
+      fBulwark.position.set(sx, 4.65, 8.5);
+      group.add(fBulwark);
+    }
+
+    // 4. Forward Wheelhouse & Living Quarters
+    // Lower Deckhouse
+    const lowerHouse = new THREE.Mesh(new THREE.BoxGeometry(5.6, 2.4, 6.2), matCabin);
+    lowerHouse.position.set(0, 3.8, 4.8);
+    group.add(lowerHouse);
+
+    // Upper Wheelhouse Bridge
+    const bridge = new THREE.Mesh(new THREE.BoxGeometry(5.2, 2.4, 4.8), matCabin);
+    bridge.position.set(0, 6.2, 5.0);
+    group.add(bridge);
+
+    // Bridge Roof with Visor Overhang
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(5.6, 0.22, 5.4), matCabinRoof);
+    roof.position.set(0, 7.5, 5.1);
+    group.add(roof);
+
+    // Reverse-Raked Bridge Windows
+    const fwdWindows = new THREE.Mesh(new THREE.BoxGeometry(4.6, 1.1, 0.15), matGlass);
+    fwdWindows.rotation.x = -0.18;
+    fwdWindows.position.set(0, 6.4, 7.42);
+    group.add(fwdWindows);
+
+    // Smokestack Funnel behind wheelhouse
+    const funnel = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.7, 4.2, 10), matCabinRoof);
+    funnel.position.set(0, 6.8, 1.8);
+    group.add(funnel);
+
+    // 5. Tripod Main Mast & Rigging
+    const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.18, 8.8, 8), matSteel);
+    mast.position.set(0, 11.8, 5.2);
+    group.add(mast);
+
+    // Cross-trees
+    const crossTree = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 4.6, 8), matSteel);
+    crossTree.rotation.z = Math.PI / 2;
+    crossTree.position.set(0, 13.5, 5.2);
+    group.add(crossTree);
+
+    // Radar array bar
+    const radarBar = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.15, 0.3), matCabin);
+    radarBar.position.set(0, 16.4, 5.2);
+    group.add(radarBar);
+
+    // 6. Outrigger Stabilizer Booms (FULLY ATTACHED TO MAST & ROOF WITH RIGGING)
+    for (const sx of [-1, 1]) {
+      // Boom hinge bracket on bridge wing
+      const bracket = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.6, 8), matSteel);
+      bracket.rotation.z = Math.PI / 2;
+      bracket.position.set(sx * 2.8, 7.4, 5.2);
+      group.add(bracket);
+
+      // Angled Boom (Starts AT the bracket, extends outward)
+      const boom = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.12, 8.5, 8), matGantry);
+      boom.position.set(sx * 5.4, 9.4, 4.8);
+      boom.rotation.z = sx * -0.58;
+      boom.rotation.x = 0.12;
+      group.add(boom);
+
+      // Topping Lift Stay Cable (From boom tip to mast cross-tree)
+      const stay = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 6.8, 6), matSteel);
+      stay.position.set(sx * 5.1, 11.5, 5.0);
+      stay.rotation.z = sx * 0.52;
+      group.add(stay);
+
+      // Paravane Stabilizer Torpedo
+      const torpedo = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 1.2, 8), matSteel);
+      torpedo.rotation.x = Math.PI / 2;
+      torpedo.position.set(sx * 7.8, 3.2, 4.5);
+      group.add(torpedo);
+
+      // Suspension cable
+      const suspCable = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 7.8, 6), matSteel);
+      suspCable.position.set(sx * 7.8, 7.2, 4.5);
+      group.add(suspCable);
+    }
+
+    // 7. Aft Trawl Net Gantry (4-Legged A-Frame)
+    for (const sx of [-2.8, 2.8]) {
+      // Forward leg anchored in working deck
+      const legFwd = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 8.6, 8), matGantry);
+      legFwd.position.set(sx, 6.8, -8.2);
+      legFwd.rotation.x = -0.22;
+      group.add(legFwd);
+
+      // Aft leg anchored in stern coaming
+      const legAft = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 7.8, 8), matGantry);
+      legAft.position.set(sx, 6.8, -11.8);
+      legAft.rotation.x = 0.24;
+      group.add(legAft);
+    }
+
+    // Overhead heavy crossbar
+    const crossbar = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 5.8, 8), matGantry);
     crossbar.rotation.z = Math.PI / 2;
-    crossbar.position.set(0, 10.5, -9.1);
+    crossbar.position.set(0, 10.6, -10.2);
     group.add(crossbar);
 
-    // Outrigger Stabilizer Booms
-    for (const sx of [-1, 1]) {
-      const boom = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, 9.5), matGantry);
-      boom.rotation.z = sx * 0.75;
-      boom.rotation.x = 0.2;
-      boom.position.set(sx * 4.8, 6.5, 2.0);
-      group.add(boom);
+    // Hanging trawl sheaves/blocks
+    for (const bx of [-1.6, 1.6]) {
+      const block = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.08, 6, 12), matSteel);
+      block.position.set(bx, 9.7, -10.2);
+      group.add(block);
     }
+
+    // 8. Trawl Winches & Net Drum on Working Deck
+    // Twin Split Winches
+    for (const wx of [-1.6, 1.6]) {
+      const winch = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 1.1, 10), matSteel);
+      winch.rotation.z = Math.PI / 2;
+      winch.position.set(wx, 3.3, -3.2);
+      group.add(winch);
+    }
+
+    // Central Net Drum Reel
+    const netDrum = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.9, 2.8, 12), new THREE.MeshStandardMaterial({ color: 0x124a24, roughness: 0.9 }));
+    netDrum.rotation.z = Math.PI / 2;
+    netDrum.position.set(0, 3.8, -6.8);
+    group.add(netDrum);
+
+    // Hatch coaming
+    const hatch = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.35, 2.6), matSteel);
+    hatch.position.set(0, 2.85, 0.2);
+    group.add(hatch);
 
     // Halogen Deck Floodlights
     const floodlight = new THREE.PointLight(0xfffaed, 2.8, 25);
-    floodlight.position.set(0, 8.5, -4.0);
+    floodlight.position.set(0, 10.2, -9.8);
     group.add(floodlight);
 
     // COLREGs: Trawling Lights (Green over White 360° all-round mast lights)
@@ -213,10 +378,11 @@ export class MarineTraffic {
       m.position.copy(pos);
       group.add(m);
     };
-    addDot(new THREE.Vector3(0, 10.8, 4.5), 0x00ff33); // Green (upper)
-    addDot(new THREE.Vector3(0, 9.8, 4.5), 0xffffff);  // White (lower)
-    addDot(new THREE.Vector3(-3.65, 6.0, 4.5), 0xff0000); // Port Red
-    addDot(new THREE.Vector3(3.65, 6.0, 4.5), 0x00ff33);  // Starboard Green
+    addDot(new THREE.Vector3(0, 15.6, 5.2), 0x00ff33); // Green (upper)
+    addDot(new THREE.Vector3(0, 14.6, 5.2), 0xffffff);  // White (lower)
+    addDot(new THREE.Vector3(-3.8, 6.5, 5.0), 0xff0000); // Port Red
+    addDot(new THREE.Vector3(3.8, 6.5, 5.0), 0x00ff33);  // Starboard Green
+    addDot(new THREE.Vector3(0, 4.0, -12.6), 0xffffff);  // Stern White
 
     return group;
   }
@@ -360,6 +526,135 @@ export class MarineTraffic {
       v.group.rotation.y = v.heading;
       this.scene.add(v.group);
     }
+
+    this.loadBlenderTraffic();
+  }
+
+  loadBlenderTraffic() {
+    const loader = new GLTFLoader();
+
+    // 1. Container Ship (MV ATLANTIC PHOENIX)
+    loader.load('assets/models/container_ship.glb', (gltf) => {
+      const model = gltf.scene;
+      model.traverse((c) => {
+        if (c.isMesh) {
+          c.castShadow = true;
+          c.receiveShadow = true;
+          if (c.material) {
+            c.material.side = THREE.DoubleSide;
+          }
+        }
+      });
+
+      // Commercial Navigation Lights
+      const addNavDot = (pos, colorHex, intensity = 4.0) => {
+        const dot = new THREE.Mesh(
+          new THREE.SphereGeometry(0.35, 6, 6),
+          new THREE.MeshStandardMaterial({ color: colorHex, emissive: colorHex, emissiveIntensity: intensity })
+        );
+        dot.position.copy(pos);
+        model.add(dot);
+      };
+      addNavDot(new THREE.Vector3(-11.1, 18.5, -38), 0xff0000); // Port Red
+      addNavDot(new THREE.Vector3(11.1, 18.5, -38), 0x00ff33);  // Starboard Green
+      addNavDot(new THREE.Vector3(0, 29.0, -38), 0xffffff);     // Forward Masthead White
+      addNavDot(new THREE.Vector3(0, 32.5, -46), 0xffffff);     // Aft Masthead White
+      addNavDot(new THREE.Vector3(0, 5.5, -52.6), 0xffffff);    // Stern White
+
+      const v = this.vessels.find(x => x.type === 'Container Carrier');
+      if (v) {
+        while (v.group.children.length > 0) {
+          const child = v.group.children[0];
+          v.group.remove(child);
+          if (child.geometry) child.geometry.dispose();
+        }
+        v.group.add(model);
+        console.log('Nautilus 3D: Ultra-realistic Blender container carrier model loaded.');
+      }
+    });
+
+    // 2. Commercial Fishing Trawler (FV NORTHERN SEAS)
+    loader.load('assets/models/fishing_trawler.glb', (gltf) => {
+      const model = gltf.scene;
+      model.traverse((c) => {
+        if (c.isMesh) {
+          c.castShadow = true;
+          c.receiveShadow = true;
+          if (c.material) {
+            c.material.side = THREE.DoubleSide;
+          }
+        }
+      });
+
+      // COLREGs: Trawling Lights (Green over White 360° all-round masthead cluster)
+      const addTrawlerLight = (pos, colorHex, intensity = 4.0) => {
+        const dot = new THREE.Mesh(
+          new THREE.SphereGeometry(0.22, 6, 6),
+          new THREE.MeshStandardMaterial({ color: colorHex, emissive: colorHex, emissiveIntensity: intensity })
+        );
+        dot.position.copy(pos);
+        model.add(dot);
+      };
+      addTrawlerLight(new THREE.Vector3(0, 15.6, 5.2), 0x00ff33); // Green (upper trawling light)
+      addTrawlerLight(new THREE.Vector3(0, 14.6, 5.2), 0xffffff);  // White (lower trawling light)
+      addTrawlerLight(new THREE.Vector3(-3.8, 6.5, 5.0), 0xff0000); // Port Red
+      addTrawlerLight(new THREE.Vector3(3.8, 6.5, 5.0), 0x00ff33);  // Starboard Green
+      addTrawlerLight(new THREE.Vector3(0, 4.0, -12.6), 0xffffff);  // Stern White
+
+      // Halogen Working Deck Floodlight
+      const floodlight = new THREE.PointLight(0xfffaed, 2.8, 30);
+      floodlight.position.set(0, 10.4, -9.8);
+      model.add(floodlight);
+
+      const v = this.vessels.find(x => x.type === 'Commercial Trawler');
+      if (v) {
+        while (v.group.children.length > 0) {
+          const child = v.group.children[0];
+          v.group.remove(child);
+          if (child.geometry) child.geometry.dispose();
+        }
+        v.group.add(model);
+        console.log('Nautilus 3D: Ultra-realistic Blender commercial fishing trawler model loaded.');
+      }
+    });
+
+    // 3. Racing Sailing Yacht (SY AURA OCEANIS)
+    loader.load('assets/models/sailing_yacht.glb', (gltf) => {
+      const model = gltf.scene;
+      model.traverse((c) => {
+        if (c.isMesh) {
+          c.castShadow = true;
+          c.receiveShadow = true;
+          if (c.material) {
+            c.material.side = THREE.DoubleSide;
+          }
+        }
+      });
+
+      const addSloopLight = (pos, colorHex, intensity = 3.5) => {
+        const dot = new THREE.Mesh(
+          new THREE.SphereGeometry(0.18, 6, 6),
+          new THREE.MeshStandardMaterial({ color: colorHex, emissive: colorHex, emissiveIntensity: intensity })
+        );
+        dot.position.copy(pos);
+        model.add(dot);
+      };
+      addSloopLight(new THREE.Vector3(-2.4, 1.6, 8.2), 0xff0000); // Port Red
+      addSloopLight(new THREE.Vector3(2.4, 1.6, 8.2), 0x00ff33);  // Starboard Green
+      addSloopLight(new THREE.Vector3(0, 24.5, 1.5), 0xffffff);   // Masthead White
+      addSloopLight(new THREE.Vector3(0, 1.2, -9.6), 0xffffff);   // Stern White
+
+      const v = this.vessels.find(x => x.type === 'Sailing Yacht');
+      if (v) {
+        while (v.group.children.length > 0) {
+          const child = v.group.children[0];
+          v.group.remove(child);
+          if (child.geometry) child.geometry.dispose();
+        }
+        v.group.add(model);
+        console.log('Nautilus 3D: Ultra-realistic Blender racing sailing yacht model loaded.');
+      }
+    });
   }
 
   // Answer player's horn blast with an echoing acoustic response from nearest ship

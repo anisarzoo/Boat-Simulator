@@ -328,17 +328,17 @@ function createHydrodynamicHullGeometry(length, beam, depth, segments) {
 
   for (let j = 0; j <= lengthSteps; j++) {
     const zT = j / lengthSteps; // 0 = stern, 1 = bow
-    const z = (zT - 0.5) * length;
+    const baseZ = (zT - 0.5) * length;
 
     // Longitudinal tapering & bow flare
     let beamScale = 1.0;
     let bowFlare = 0.0;
 
     if (zT > 0.60) {
-      // Forward section to clipper bow
+      // Forward section to clipper bow - tapers smoothly to EXACTLY 0 at bow
       const bT = (zT - 0.60) / 0.40;
-      beamScale = 1.0 - Math.pow(bT, 1.8) * 0.94;
-      bowFlare = Math.pow(bT, 2.2) * 0.45; // Flares topsides outward
+      beamScale = Math.max(0.0, (1.0 - Math.pow(bT, 1.4)) * (1.0 - bT));
+      bowFlare = Math.pow(bT, 2.0) * 0.45; // Flares topsides outward
     } else if (zT < 0.12) {
       // Aft transom taper
       const sT = (0.12 - zT) / 0.12;
@@ -350,6 +350,10 @@ function createHydrodynamicHullGeometry(length, beam, depth, segments) {
 
       // Vertical coordinate: keel to deck
       const y = -depth * (1.0 - pT) + depth * 0.12;
+
+      // Clipper bow rake: topsides extend forward gracefully at the bow tip
+      const bowRake = zT > 0.65 ? Math.pow((zT - 0.65) / 0.35, 1.8) * (0.12 + pT * 0.38) : 0.0;
+      const z = baseZ + bowRake;
 
       // Deadrise cross-section
       let halfBeam;
@@ -399,6 +403,35 @@ function createHydrodynamicHullGeometry(length, beam, depth, segments) {
       indices.push(ap, bp, cp);
       indices.push(bp, dp, cp);
     }
+
+    // Connect starboard and port along the bottom keel line (i = 0)
+    const sk0 = j * vertsPerRing;
+    const sk1 = (j + 1) * vertsPerRing;
+    const pk0 = j * vertsPerRing + 1;
+    const pk1 = (j + 1) * vertsPerRing + 1;
+    indices.push(sk0, pk0, sk1);
+    indices.push(pk0, pk1, sk1);
+  }
+
+  // Transom stern cap (j = 0)
+  for (let i = 0; i < profileSteps; i++) {
+    const s = i * 2;
+    const s_next = (i + 1) * 2;
+    const p = i * 2 + 1;
+    const p_next = (i + 1) * 2 + 1;
+    indices.push(s, s_next, p);
+    indices.push(p, s_next, p_next);
+  }
+
+  // Bow knife-edge cap (j = lengthSteps)
+  const lastRing = lengthSteps * vertsPerRing;
+  for (let i = 0; i < profileSteps; i++) {
+    const s = lastRing + i * 2;
+    const s_next = lastRing + (i + 1) * 2;
+    const p = lastRing + i * 2 + 1;
+    const p_next = lastRing + (i + 1) * 2 + 1;
+    indices.push(s, p, s_next);
+    indices.push(p, p_next, s_next);
   }
 
   const geo = new THREE.BufferGeometry();
@@ -408,6 +441,59 @@ function createHydrodynamicHullGeometry(length, beam, depth, segments) {
   geo.setIndex(indices);
   geo.computeVertexNormals();
 
+  return geo;
+}
+
+function createYachtDeckGeometry(length, beam) {
+  const steps = 36;
+  const vertices = [];
+  const uvs = [];
+  const indices = [];
+
+  for (let j = 0; j <= steps; j++) {
+    const zT = j / steps;
+    const baseZ = (zT - 0.5) * length;
+    const bowRake = zT > 0.65 ? Math.pow((zT - 0.65) / 0.35, 1.8) * 0.50 : 0.0;
+    const z = baseZ + bowRake;
+
+    let beamScale = 1.0;
+    if (zT > 0.60) {
+      const bT = (zT - 0.60) / 0.40;
+      beamScale = Math.max(0.0, (1.0 - Math.pow(bT, 1.4)) * (1.0 - bT));
+    } else if (zT < 0.12) {
+      const sT = (0.12 - zT) / 0.12;
+      beamScale = 1.0 - Math.pow(sT, 2.4) * 0.18;
+    }
+    const halfBeam = (beam / 2) * beamScale;
+
+    // Cross section: port sheer, center, starboard sheer
+    vertices.push(-halfBeam, 1.30, z); // 0: port
+    vertices.push(0.0, 1.32, z);       // 1: center camber
+    vertices.push(halfBeam, 1.30, z);  // 2: starboard
+
+    uvs.push(0.0, zT);
+    uvs.push(0.5, zT);
+    uvs.push(1.0, zT);
+  }
+
+  for (let j = 0; j < steps; j++) {
+    const r0 = j * 3;
+    const r1 = (j + 1) * 3;
+
+    // Port quad
+    indices.push(r0, r1, r0 + 1);
+    indices.push(r0 + 1, r1, r1 + 1);
+
+    // Starboard quad
+    indices.push(r0 + 1, r1 + 1, r0 + 2);
+    indices.push(r0 + 2, r1 + 1, r1 + 2);
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
   return geo;
 }
 
@@ -436,13 +522,15 @@ export class Ship {
     this.group.add(this.proceduralRoot);
     this.scene.add(this.group);
 
-    // Load ultra-realistic Blender 3D model
+    // Load high-detail Blender yacht model (procedural hull serves as instant fallback)
     this.loadBlenderModel();
   }
 
   buildShip() {
-    const teak = createTeakTextures();
-    const mfdTexture = createMFDDisplayTexture();
+    this.teak = createTeakTextures();
+    this.mfdTexture = createMFDDisplayTexture();
+    const teak = this.teak;
+    const mfdTexture = this.mfdTexture;
     const transomTexture = createTransomNameTexture();
     const lifeRingTexture = createLifeRingTexture();
 
@@ -450,13 +538,15 @@ export class Ship {
     const matHullDark = new THREE.MeshStandardMaterial({
       color: 0x091422, // Deep metallic oceanic navy
       roughness: 0.14,
-      metalness: 0.38
+      metalness: 0.38,
+      side: THREE.DoubleSide
     });
 
     const matHullWhite = new THREE.MeshStandardMaterial({
       color: 0xf8fafc, // Crisp yacht gelcoat
       roughness: 0.12,
-      metalness: 0.18
+      metalness: 0.18,
+      side: THREE.DoubleSide
     });
 
     const matBootStripeRed = new THREE.MeshStandardMaterial({
@@ -485,6 +575,14 @@ export class Ship {
       metalness: 0.95,
       transparent: true,
       opacity: 0.72
+    });
+
+    const matGlassClear = new THREE.MeshStandardMaterial({
+      color: 0xdaeffa,
+      roughness: 0.05,
+      metalness: 0.12,
+      transparent: true,
+      opacity: 0.18
     });
 
     const matChrome316 = new THREE.MeshStandardMaterial({
@@ -522,92 +620,77 @@ export class Ship {
 
     const root = new THREE.Group();
 
-    // ── 1. LOWER HULL & RUNNING SURFACE ──
+    // ── 1. LOWER HULL & RUNNING SURFACE (Watertight Hydrodynamic Monohull) ──
     const hullGeo = createHydrodynamicHullGeometry(18.5, 5.2, 2.0, 36);
     const hull = new THREE.Mesh(hullGeo, matHullDark);
     hull.castShadow = true;
     hull.receiveShadow = true;
     root.add(hull);
 
-    // Upper topsides (above waterline)
-    const upperHullGeo = createHydrodynamicHullGeometry(18.0, 5.25, 0.75, 32);
+    // Upper topsides (pure yacht gelcoat, perfectly matching the hull taper)
+    const upperHullGeo = createHydrodynamicHullGeometry(18.5, 5.2, 0.85, 36);
     const upperHull = new THREE.Mesh(upperHullGeo, matHullWhite);
-    upperHull.position.y = 0.92;
+    upperHull.position.y = 0.85;
     upperHull.castShadow = true;
     root.add(upperHull);
 
-    // Dual waterline boot-stripes (Crimson + Gold)
-    const bootStripe1 = new THREE.Mesh(
-      new THREE.BoxGeometry(5.28, 0.12, 17.8),
-      matBootStripeRed
-    );
-    bootStripe1.position.set(0, -0.06, 0.1);
-    root.add(bootStripe1);
-
-    const bootStripe2 = new THREE.Mesh(
-      new THREE.BoxGeometry(5.30, 0.035, 17.6),
-      matGoldAccent
-    );
-    bootStripe2.position.set(0, 0.05, 0.1);
-    root.add(bootStripe2);
-
     // Continuous stainless steel rub-rail along sheerline
-    for (const sx of [-2.62, 2.62]) {
+    for (const sx of [-2.60, 2.60]) {
       const rubRail = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.04, 0.04, 17.4, 8),
+        new THREE.CylinderGeometry(0.035, 0.035, 15.6, 8),
         matChrome316
       );
       rubRail.rotation.x = Math.PI / 2;
-      rubRail.position.set(sx, 1.38, -0.1);
+      rubRail.position.set(sx, 1.38, -0.6);
       root.add(rubRail);
     }
 
-    // Flared bow clipper prow
-    const prowStem = new THREE.Mesh(
-      new THREE.ConeGeometry(0.32, 4.8, 8),
-      matHullWhite
-    );
-    prowStem.rotation.x = -Math.PI / 2.05;
-    prowStem.position.set(0, 0.45, 9.7);
-    prowStem.castShadow = true;
-    root.add(prowStem);
-
-    // Recessed bow anchor pockets (Hawse pipes) with Danforth/Plow Anchors
-    for (const sx of [-2.45, 2.45]) {
+    // Recessed bow anchor pockets (Hawse pipes) positioned right on the bow flare
+    for (const sx of [-0.68, 0.68]) {
       const hawsePocket = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.32, 0.35, 0.18, 12),
+        new THREE.CylinderGeometry(0.20, 0.22, 0.16, 12),
         matHullDark
       );
       hawsePocket.rotation.z = (sx > 0 ? -1 : 1) * Math.PI / 2;
-      hawsePocket.position.set(sx, 0.85, 8.2);
+      hawsePocket.position.set(sx, 0.88, 8.1);
       root.add(hawsePocket);
 
       // Stainless anchor fluke and shank
       const anchorShank = new THREE.Mesh(
-        new THREE.BoxGeometry(0.12, 0.65, 0.12),
+        new THREE.BoxGeometry(0.08, 0.52, 0.08),
         matChrome316
       );
       anchorShank.rotation.x = 0.45;
-      anchorShank.position.set(sx * 0.98, 0.85, 8.2);
+      anchorShank.position.set(sx * 0.98, 0.88, 8.1);
       root.add(anchorShank);
 
       const anchorFluke = new THREE.Mesh(
-        new THREE.ConeGeometry(0.28, 0.55, 3),
+        new THREE.ConeGeometry(0.20, 0.44, 3),
         matChrome316
       );
       anchorFluke.rotation.x = -0.55;
-      anchorFluke.position.set(sx * 1.01, 0.68, 8.35);
+      anchorFluke.position.set(sx * 1.01, 0.72, 8.22);
       root.add(anchorFluke);
     }
 
-    // ── 2. AFT BEACH CLUB & TEAK SWIM PLATFORM ──
+    // ── 2. AFT BEACH CLUB & TEAK SWIM PLATFORM (Firmly Attached to Transom) ──
     const swimPlatform = new THREE.Mesh(
-      new THREE.BoxGeometry(4.8, 0.22, 2.2),
+      new THREE.BoxGeometry(4.6, 0.20, 1.25),
       matDeckTeak
     );
-    swimPlatform.position.set(0, 0.08, -9.4);
+    swimPlatform.position.set(0, 0.12, -9.65);
     swimPlatform.receiveShadow = true;
     root.add(swimPlatform);
+
+    // Heavy-duty stainless steel transom cantilever support knees
+    for (const bx of [-1.5, -0.5, 0.5, 1.5]) {
+      const knee = new THREE.Mesh(
+        new THREE.BoxGeometry(0.08, 0.45, 1.15),
+        matChrome316
+      );
+      knee.position.set(bx, -0.15, -9.6);
+      root.add(knee);
+    }
 
     // Aft transom nameplate
     const transomPlate = new THREE.Mesh(
@@ -615,74 +698,35 @@ export class Ship {
       new THREE.MeshBasicMaterial({ map: transomTexture, transparent: true })
     );
     transomPlate.rotation.y = Math.PI;
-    transomPlate.position.set(0, 0.85, -9.05);
+    transomPlate.position.set(0, 0.85, -9.08);
     root.add(transomPlate);
 
-    // Twin curved companionway teak stairs to main deck
-    for (const sx of [-1.95, 1.95]) {
-      for (let s = 0; s < 5; s++) {
+    // Twin companionway teak stairs firmly linking main deck (Y=1.2) to swim platform (Y=0.12)
+    for (const sx of [-1.85, 1.85]) {
+      for (let s = 0; s < 4; s++) {
         const step = new THREE.Mesh(
-          new THREE.BoxGeometry(0.72, 0.18, 0.36),
+          new THREE.BoxGeometry(0.68, 0.16, 0.32),
           matDeckTeak
         );
-        step.position.set(sx, 0.25 + s * 0.22, -8.6 + s * 0.34);
+        step.position.set(sx, 0.22 + s * 0.24, -9.45 + s * 0.25);
         step.castShadow = true;
         root.add(step);
 
         // Recessed blue LED step courtesy light
         const stepLight = new THREE.Mesh(
-          new THREE.SphereGeometry(0.025, 4, 4),
+          new THREE.SphereGeometry(0.022, 4, 4),
           new THREE.MeshBasicMaterial({ color: 0x00e5ff })
         );
-        stepLight.position.set(sx + (sx > 0 ? 0.32 : -0.32), 0.35 + s * 0.22, -8.6 + s * 0.34);
+        stepLight.position.set(sx + (sx > 0 ? 0.30 : -0.30), 0.32 + s * 0.24, -9.45 + s * 0.25);
         root.add(stepLight);
       }
     }
 
-    // ── 3. MAIN TEAK DECK & BULWARKS ──
-    const mainDeck = new THREE.Mesh(
-      new THREE.BoxGeometry(4.9, 0.14, 17.6),
-      matDeckTeak
-    );
-    mainDeck.position.set(0, 1.25, -0.2);
+    // ── 3. MAIN TEAK DECK (Seamless cambered deck matching yacht sheerline) ──
+    const mainDeckGeo = createYachtDeckGeometry(18.5, 5.2);
+    const mainDeck = new THREE.Mesh(mainDeckGeo, matDeckTeak);
     mainDeck.receiveShadow = true;
     root.add(mainDeck);
-
-    // Foredeck curved teak planking (flat horizontal deck following yacht bow flare)
-    const foredeckShape = new THREE.Shape();
-    foredeckShape.moveTo(-2.45, 0.0);
-    foredeckShape.lineTo(2.45, 0.0);
-    foredeckShape.bezierCurveTo(2.35, 1.1, 1.4, 2.2, 0.18, 3.1);
-    foredeckShape.lineTo(-0.18, 3.1);
-    foredeckShape.bezierCurveTo(-1.4, 2.2, -2.35, 1.1, -2.45, 0.0);
-    foredeckShape.closePath();
-
-    const foredeckGeo = new THREE.ExtrudeGeometry(foredeckShape, {
-      depth: 0.14,
-      bevelEnabled: true,
-      bevelSegments: 2,
-      steps: 1,
-      bevelSize: 0.02,
-      bevelThickness: 0.02
-    });
-    // Rotate so it lays flat horizontally
-    foredeckGeo.rotateX(Math.PI / 2);
-
-    const foredeck = new THREE.Mesh(foredeckGeo, matDeckTeak);
-    foredeck.position.set(0, 1.32, 8.6);
-    foredeck.receiveShadow = true;
-    root.add(foredeck);
-
-    // Bulwark cap rails with polished teak & chrome finish
-    for (const sx of [-2.45, 2.45]) {
-      const capRail = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.05, 0.05, 15.0, 8),
-        matChrome316
-      );
-      capRail.rotation.x = Math.PI / 2;
-      capRail.position.set(sx, 1.48, -0.4);
-      root.add(capRail);
-    }
 
     // Foredeck Sunpad Lounge Upholstery
     const sunpadBase = new THREE.Mesh(
@@ -831,51 +875,122 @@ export class Ship {
     root.add(aftSettee);
 
     // ── 5. WHEELHOUSE / BRIDGE & FIRST-PERSON HELM COCKPIT ──
-    // Aerodynamic bridge tier with reverse-sheer commercial forward rake
-    const bridgeCabin = new THREE.Mesh(
-      new THREE.BoxGeometry(3.3, 1.35, 4.2),
+    // Lower bridge base coaming (below dashboard, stops at Y=3.00)
+    const bridgeBase = new THREE.Mesh(
+      new THREE.BoxGeometry(3.3, 0.65, 4.0),
       matHullWhite
     );
-    bridgeCabin.position.set(0, 3.45, 0.4);
-    bridgeCabin.castShadow = true;
-    root.add(bridgeCabin);
+    bridgeBase.position.set(0, 2.70, 0.4);
+    bridgeBase.castShadow = true;
+    root.add(bridgeBase);
 
-    // Reverse-sheer panoramic windscreen (Raked forward 18° to prevent solar glare & allow clear foredeck view)
-    const bridgeWindscreen = new THREE.Mesh(
-      new THREE.BoxGeometry(3.38, 0.88, 3.2),
-      matGlassTint
+    // Aft cabin bulkhead with entry door
+    const aftBridgeWall = new THREE.Mesh(
+      new THREE.BoxGeometry(3.3, 1.15, 0.12),
+      matHullWhite
     );
-    bridgeWindscreen.position.set(0, 3.65, 0.65);
-    root.add(bridgeWindscreen);
+    aftBridgeWall.position.set(0, 3.60, -1.55);
+    aftBridgeWall.castShadow = true;
+    root.add(aftBridgeWall);
 
-    // Slim side structural pillars (positioned at X=±1.62m to keep the central view completely clear!)
-    for (const sx of [-1.65, 1.65]) {
-      const sidePillar = new THREE.Mesh(
-        new THREE.BoxGeometry(0.08, 0.88, 0.12),
+    // Side coamings / waist-level bulwarks with continuous framing, A/B pillars, and wing mirrors
+    for (const sx of [-1.60, 1.60]) {
+      const sideCoaming = new THREE.Mesh(
+        new THREE.BoxGeometry(0.12, 0.55, 3.8),
         matHullWhite
       );
-      sidePillar.position.set(sx, 3.65, 2.25);
-      root.add(sidePillar);
+      sideCoaming.position.set(sx, 3.30, 0.35);
+      root.add(sideCoaming);
+
+      // Continuous side panoramic glass windows (connecting to front windscreen at Z = 2.22)
+      const sideGlass = new THREE.Mesh(
+        new THREE.BoxGeometry(0.025, 0.65, 2.65),
+        matGlassClear
+      );
+      sideGlass.position.set(sx, 3.82, 0.95);
+      root.add(sideGlass);
+
+      // Top and bottom chrome window trim
+      for (const ty of [3.50, 4.14]) {
+        const trim = new THREE.Mesh(
+          new THREE.BoxGeometry(0.04, 0.03, 2.65),
+          matChrome316
+        );
+        trim.position.set(sx, ty, 0.95);
+        root.add(trim);
+      }
+
+      // Structural A-Pillar (connects windscreen corner Y=3.0 to hardtop Y=4.22)
+      const aPillar = new THREE.Mesh(
+        new THREE.BoxGeometry(0.08, 1.15, 0.08),
+        matHullWhite
+      );
+      aPillar.position.set(sx, 3.65, 2.22);
+      aPillar.rotation.x = 0.22;
+      root.add(aPillar);
+
+      // Structural B-Pillar (connects mid coaming Y=3.3 to hardtop Y=4.22)
+      const bPillar = new THREE.Mesh(
+        new THREE.BoxGeometry(0.07, 0.85, 0.07),
+        matHullWhite
+      );
+      bPillar.position.set(sx, 3.75, -0.35);
+      root.add(bPillar);
+
+      // Contoured Chrome Marine Rear-View Wing Mirrors (firmly mounted on A-pillars)
+      const mirrorStalk = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.015, 0.015, 0.22),
+        matChrome316
+      );
+      mirrorStalk.rotation.z = Math.PI / 2;
+      mirrorStalk.position.set(sx > 0 ? sx + 0.11 : sx - 0.11, 3.65, 2.15);
+      root.add(mirrorStalk);
+
+      const mirrorHousing = new THREE.Mesh(
+        new THREE.BoxGeometry(0.06, 0.22, 0.14),
+        matChrome316
+      );
+      mirrorHousing.position.set(sx > 0 ? sx + 0.22 : sx - 0.22, 3.65, 2.15);
+      root.add(mirrorHousing);
+
+      const mirrorGlass = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.12, 0.20),
+        new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.98, roughness: 0.02 })
+      );
+      mirrorGlass.rotation.y = Math.PI;
+      mirrorGlass.position.set(sx > 0 ? sx + 0.22 : sx - 0.22, 3.65, 2.08);
+      root.add(mirrorGlass);
     }
 
-    // Dual Pantograph Windshield Wipers (resting realistically against the glass)
+    // Panoramic forward windscreen: 15° forward rake (reverse sheer)
+    // Crystal clear glass allowing 100% unobstructed view of foredeck and sea
+    const frontWindscreen = new THREE.Mesh(
+      new THREE.BoxGeometry(3.18, 0.88, 0.03),
+      matGlassClear
+    );
+    frontWindscreen.rotation.x = 0.22;
+    frontWindscreen.position.set(0, 3.65, 2.22);
+    root.add(frontWindscreen);
+
+    // Dual Pantograph Windshield Wipers (resting at base of windshield)
     this.wipers = [];
     for (const wx of [-0.75, 0.75]) {
       const wiperGroup = new THREE.Group();
-      wiperGroup.position.set(wx, 3.32, 2.26);
+      wiperGroup.position.set(wx, 3.22, 2.12);
+      wiperGroup.rotation.x = 0.22;
 
       const wiperArm = new THREE.Mesh(
-        new THREE.BoxGeometry(0.02, 0.44, 0.015),
+        new THREE.BoxGeometry(0.015, 0.42, 0.012),
         new THREE.MeshStandardMaterial({ color: 0x111418, roughness: 0.6 })
       );
-      wiperArm.position.y = 0.22;
+      wiperArm.position.y = 0.21;
       wiperGroup.add(wiperArm);
 
       const blade = new THREE.Mesh(
-        new THREE.BoxGeometry(0.015, 0.42, 0.01),
+        new THREE.BoxGeometry(0.012, 0.40, 0.008),
         new THREE.MeshStandardMaterial({ color: 0x05070a, roughness: 0.9 })
       );
-      blade.position.set(0, 0.22, 0.012);
+      blade.position.set(0, 0.21, 0.01);
       wiperGroup.add(blade);
 
       root.add(wiperGroup);
@@ -884,26 +999,35 @@ export class Ship {
 
     // ── HIGH-TECH GLASS BRIDGE HELM CONSOLE (Visible in Bridge Camera Mode) ──
     const helmDashboard = new THREE.Mesh(
-      new THREE.BoxGeometry(2.5, 0.38, 0.95),
+      new THREE.BoxGeometry(2.5, 0.28, 0.90),
       matConsoleLeather
     );
-    helmDashboard.position.set(0, 3.22, 1.95);
+    helmDashboard.position.set(0, 2.92, 1.88);
     helmDashboard.rotation.x = -0.22;
     helmDashboard.castShadow = true;
     root.add(helmDashboard);
 
     // Triple Glass Bridge MFD Screens
     const mfdScreenMesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(2.35, 0.32),
+      new THREE.PlaneGeometry(2.35, 0.28),
       matMFD
     );
     mfdScreenMesh.rotation.x = -0.22;
-    mfdScreenMesh.position.set(0, 3.32, 1.88);
+    mfdScreenMesh.position.set(0, 3.02, 1.82);
     root.add(mfdScreenMesh);
 
-    // 3-Spoke Marine Steering Wheel (Rotates with Rudder Input)
+    // Angled steering column mounting hub
+    const steerColumn = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.045, 0.055, 0.22, 12),
+      matChrome316
+    );
+    steerColumn.rotation.x = -0.55;
+    steerColumn.position.set(-0.45, 3.12, 1.68);
+    root.add(steerColumn);
+
+    // 3-Spoke Marine Steering Wheel (Rotates with Rudder Input - fully elevated & visible!)
     const wheelGroup = new THREE.Group();
-    wheelGroup.position.set(-0.45, 3.32, 1.72);
+    wheelGroup.position.set(-0.45, 3.28, 1.56);
     wheelGroup.rotation.x = -0.55;
 
     const wheelRim = new THREE.Mesh(
@@ -931,31 +1055,33 @@ export class Ship {
     root.add(wheelGroup);
     this.helmWheel = wheelGroup;
 
-    // Twin Chrome Engine Throttle Quadrant (Levers move with throttle input)
+    // Twin Chrome Engine Throttle Quadrant (Levers move forward together with throttle)
     const throttleBase = new THREE.Mesh(
       new THREE.BoxGeometry(0.18, 0.08, 0.22),
       matChrome316
     );
-    throttleBase.position.set(0.22, 3.34, 1.78);
+    throttleBase.position.set(0.22, 3.06, 1.68);
     root.add(throttleBase);
 
     this.throttleLevers = [];
-    for (const lx of [-0.045, 0.045]) {
+    for (const lx of [-0.042, 0.042]) {
       const leverGroup = new THREE.Group();
-      leverGroup.position.set(0.22 + lx, 3.38, 1.78);
+      leverGroup.position.set(0.22 + lx, 3.10, 1.68);
 
       const leverStem = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.01, 0.01, 0.16),
+        new THREE.CylinderGeometry(0.008, 0.008, 0.14),
         matChrome316
       );
-      leverStem.position.y = 0.08;
+      leverStem.position.y = 0.07;
       leverGroup.add(leverStem);
 
+      // Ergonomic teardrop marine throttle handle
       const knob = new THREE.Mesh(
-        new THREE.SphereGeometry(0.025, 8, 8),
+        new THREE.SphereGeometry(0.016, 8, 8),
         new THREE.MeshStandardMaterial({ color: lx < 0 ? 0xd32f2f : 0x1976d2, roughness: 0.3 })
       );
-      knob.position.y = 0.16;
+      knob.scale.set(1.0, 1.3, 1.6);
+      knob.position.y = 0.14;
       leverGroup.add(knob);
 
       root.add(leverGroup);
@@ -967,7 +1093,7 @@ export class Ship {
       new THREE.SphereGeometry(0.075, 12, 12),
       matChrome316
     );
-    compassBinnacle.position.set(0, 3.42, 2.05);
+    compassBinnacle.position.set(0, 3.16, 1.95);
     root.add(compassBinnacle);
 
     const compassCard = new THREE.Mesh(
@@ -975,7 +1101,7 @@ export class Ship {
       new THREE.MeshBasicMaterial({ color: 0x00e5ff })
     );
     compassCard.rotation.x = -Math.PI / 2;
-    compassCard.position.set(0, 3.47, 2.05);
+    compassCard.position.set(0, 3.21, 1.95);
     root.add(compassCard);
 
     // Twin High-Back Captain & Co-Pilot Helm Bucket Chairs
@@ -1199,55 +1325,90 @@ export class Ship {
     this.propellers = [];
     this.rudders = [];
 
-    for (const sx of [-1.25, 1.25]) {
-      // Propeller shaft & strut bracket
-      const shaft = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.07, 0.07, 2.6),
+    for (const sx of [-1.20, 1.20]) {
+      // 1. Bronze Shaft Log / Hull penetration collar (Z = -5.80, Y = -0.85)
+      const shaftLog = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.12, 0.15, 0.35, 12),
         matBrassMarine
       );
-      shaft.rotation.x = Math.PI / 2.25;
-      shaft.position.set(sx, -1.05, -7.8);
+      shaftLog.rotation.x = Math.PI / 2 + 0.1685;
+      shaftLog.position.set(sx, -0.85, -5.80);
+      root.add(shaftLog);
+
+      // 2. Continuous 316 Stainless / Monel Propeller Shaft (sloping down from hull to Z = -8.15)
+      const shaft = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.045, 0.045, 2.38, 12),
+        matBrassMarine
+      );
+      shaft.rotation.x = Math.PI / 2 + 0.1685;
+      shaft.position.set(sx, -1.05, -6.975);
       root.add(shaft);
 
-      const propGroup = new THREE.Group();
-      propGroup.position.set(sx, -1.25, -9.0);
+      // 3. Heavy-Duty Bronze P-Bracket Strut holding the cutless bearing firmly to the hull
+      const strutHub = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.09, 0.09, 0.38, 12),
+        matBrassMarine
+      );
+      strutHub.rotation.x = Math.PI / 2 + 0.1685;
+      strutHub.position.set(sx, -1.24, -8.05);
+      root.add(strutHub);
 
-      const hub = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.48, 12), matBrassMarine);
+      // Vertical V-Strut arm connecting hub directly UP to the hull deadrise at Y = -0.70
+      const strutArm = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.055, 0.055, 0.54, 10),
+        matBrassMarine
+      );
+      strutArm.position.set(sx, -0.97, -8.05);
+      root.add(strutArm);
+
+      // Rudder port collar on hull deadrise at Y = -0.62
+      const rudderCollar = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.10, 0.10, 0.12, 12),
+        matBrassMarine
+      );
+      rudderCollar.position.set(sx, -0.62, -8.80);
+      root.add(rudderCollar);
+
+      // 4. 5-Blade Hydrodynamic Bronze Propeller firmly mounted onto the shaft hub
+      const propGroup = new THREE.Group();
+      propGroup.position.set(sx, -1.26, -8.22);
+
+      const hub = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.32, 12), matBrassMarine);
       hub.rotation.x = -Math.PI / 2;
       propGroup.add(hub);
 
-      // 5 skewed hydrodynamic bronze blades
+      // 5 skewed bronze blades
       for (let b = 0; b < 5; b++) {
         const angle = (b * Math.PI * 2) / 5;
         const blade = new THREE.Mesh(
-          new THREE.BoxGeometry(0.14, 0.62, 0.035),
+          new THREE.BoxGeometry(0.12, 0.44, 0.025),
           matBrassMarine
         );
         blade.rotation.z = angle;
-        blade.rotation.y = 0.38;
-        blade.position.y = 0.28 * Math.sin(angle);
-        blade.position.x = 0.28 * Math.cos(angle);
+        blade.rotation.y = 0.35;
+        blade.position.y = 0.20 * Math.sin(angle);
+        blade.position.x = 0.20 * Math.cos(angle);
         propGroup.add(blade);
       }
       root.add(propGroup);
       this.propellers.push(propGroup);
 
-      // Hydraulic spade rudders with vertical stocks
+      // 5. Hydraulic Spade Rudder directly behind propeller wash, stock entering hull collar at Y = -0.62
       const rudderGroup = new THREE.Group();
-      rudderGroup.position.set(sx, -1.15, -9.5);
+      rudderGroup.position.set(sx, -0.62, -8.80); // Pivot at hull collar
 
       const rudderStock = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.045, 0.045, 1.25, 8),
+        new THREE.CylinderGeometry(0.048, 0.048, 0.75, 8),
         matChrome316
       );
-      rudderStock.position.set(0, -0.28, 0);
+      rudderStock.position.set(0, -0.375, 0);
       rudderGroup.add(rudderStock);
 
       const rudderBlade = new THREE.Mesh(
-        new THREE.BoxGeometry(0.075, 1.05, 0.72),
+        new THREE.BoxGeometry(0.065, 0.75, 0.55),
         matChrome316
       );
-      rudderBlade.position.set(0, -0.55, -0.26);
+      rudderBlade.position.set(0, -0.55, -0.14);
       rudderGroup.add(rudderBlade);
 
       root.add(rudderGroup);
@@ -1260,7 +1421,7 @@ export class Ship {
         new THREE.BoxGeometry(1.15, 0.045, 0.52),
         matChrome316
       );
-      trimTab.position.set(sx, -0.32, -9.2);
+      trimTab.position.set(sx, -0.22, -9.10);
       root.add(trimTab);
     }
 
@@ -1294,12 +1455,65 @@ export class Ship {
         const model = gltf.scene;
         model.name = 'Blender_Yacht_Model';
 
-        // Traverse and link animated components
+        // Clear procedural arrays so only the Blender model's components receive updates
+        this.propellers = [];
+        this.rudders = [];
+        this.radarAntennas = [];
+        this.throttleLevers = [];
+
+        // Traverse and enhance PBR materials & link animated components
         model.traverse((child) => {
           if (child.isMesh) {
             child.castShadow = true;
             child.receiveShadow = true;
+
+            // 1. Crystal-Clear Forward Windscreen
+            if (child.name.includes('Windscreen') || (child.material && child.material.name.includes('Marine_Glass_Clear'))) {
+              child.material = new THREE.MeshPhysicalMaterial({
+                color: 0xdaeffa,
+                transparent: true,
+                opacity: 0.16,
+                roughness: 0.04,
+                metalness: 0.06,
+                transmission: 0.94,
+                ior: 1.52,
+                depthWrite: false,
+                side: THREE.DoubleSide
+              });
+            }
+            // 2. High-Tech Glass Bridge MFD Displays (ECDIS Chart, Radar, Engine VMS)
+            else if (child.name.includes('MFD') || (child.material && child.material.name.includes('MFD'))) {
+              if (this.mfdTexture) {
+                child.material = new THREE.MeshBasicMaterial({
+                  map: this.mfdTexture
+                });
+              }
+            }
+            // 3. Burmese Teak Decking with Caulking Seams
+            else if (child.name.includes('Deck') || (child.material && child.material.name.includes('Teak'))) {
+              if (this.teak) {
+                child.material = new THREE.MeshStandardMaterial({
+                  map: this.teak.texture,
+                  bumpMap: this.teak.bumpMap,
+                  bumpScale: 0.035,
+                  roughness: 0.65,
+                  metalness: 0.02
+                });
+              }
+            }
+            // 4. Tinted Side Privacy Glass
+            else if (child.material && child.material.name.includes('Marine_Glass_Tint')) {
+              child.material = new THREE.MeshStandardMaterial({
+                color: 0x050e16,
+                roughness: 0.05,
+                metalness: 0.92,
+                transparent: true,
+                opacity: 0.72
+              });
+            }
           }
+
+          // Link interactive sub-assemblies (Empty pivots or meshes)
           if (child.name === 'Propeller_L' || child.name === 'Propeller_R') {
             this.propellers.push(child);
           }
@@ -1309,6 +1523,12 @@ export class Ship {
           if (child.name === 'Radar_Scanner') {
             this.radarAntennas.push(child);
           }
+          if (child.name === 'Helm_Wheel') {
+            this.helmWheel = child;
+          }
+          if (child.name === 'Throttle_Levers') {
+            this.throttleLevers.push(child);
+          }
         });
 
         // Hide procedural fallback geometry now that high-detail Blender model is active
@@ -1317,7 +1537,7 @@ export class Ship {
         }
 
         this.group.add(model);
-        console.log('Nautilus 3D: High-detail Blender sport yacht model successfully loaded.');
+        console.log('Nautilus 3D: High-detail Blender sport yacht model successfully loaded with PBR optics.');
       },
       undefined,
       (err) => {
@@ -1353,9 +1573,9 @@ export class Ship {
       this.helmWheel.rotation.z = -rudderInput * 2.4;
     }
 
-    // 6. Interactive engine throttle levers moving with throttle
+    // 6. Interactive engine throttle levers moving with throttle (both levers move forward together)
     for (const lever of this.throttleLevers) {
-      lever.rotation.x = -throttle * 0.42;
+      lever.rotation.x = throttle * 0.72;
     }
 
     // 7. Windshield wipers oscillation

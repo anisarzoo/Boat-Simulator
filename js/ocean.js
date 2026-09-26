@@ -8,7 +8,7 @@ export class Ocean {
     this.scene = scene;
     this.weather = initialWeather;
     this.gridSize = 3000;
-    this.segments = 256;
+    this.segments = 144;
 
     this.initMesh();
     this.initAbyssFloor();
@@ -178,17 +178,9 @@ export class Ocean {
           return sqrt(minDist);
         }
 
-        // ── Multi-octave fBm with domain rotation ──
+        // ── Streamlined 2-octave fBm (prevents GPU overheating) ──
         float fbm(vec2 p) {
-          float v = 0.0;
-          float a = 0.5;
-          mat2 rot = mat2(0.8, 0.6, -0.6, 0.8);
-          for (int i = 0; i < 5; i++) {
-            v += a * gradientNoise(p);
-            p = rot * p * 2.03 + vec2(1.7, 0.9);
-            a *= 0.49;
-          }
-          return v;
+          return gradientNoise(p) * 0.65 + gradientNoise(p * 2.05 + vec2(1.7, 0.9)) * 0.35;
         }
 
         void main() {
@@ -314,11 +306,9 @@ export class Ocean {
           if (vCrest > 0.35) {
             float w1 = worley(vWorldPos.xz * 0.8 + vec2(uTime * 0.15, -uTime * 0.08));
             float w2 = worley(vWorldPos.xz * 2.4 - vec2(uTime * 0.22, uTime * 0.12));
-            float w3 = worley(vWorldPos.xz * 6.0 + vec2(-uTime * 0.3, uTime * 0.18));
 
-            float foamCells = (1.0 - smoothstep(0.0, 0.25, w1)) * 0.5
-                            + (1.0 - smoothstep(0.0, 0.15, w2)) * 0.3
-                            + (1.0 - smoothstep(0.0, 0.10, w3)) * 0.2;
+            float foamCells = (1.0 - smoothstep(0.0, 0.25, w1)) * 0.6
+                            + (1.0 - smoothstep(0.0, 0.15, w2)) * 0.4;
 
             float foamMod = fbm(vWorldPos.xz * 0.06 + vec2(uTime * 0.02));
             foamCells *= smoothstep(0.3, 0.6, foamMod);

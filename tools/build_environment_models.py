@@ -1,8 +1,8 @@
 """
-Blender 5.2 Python Script: Generate Realistic Archipelago Environment Models
-Exports:
-- assets/models/palm_tree.glb
-- assets/models/coastal_rock.glb
+Blender 5.2 Python Script: Generate Ultra-Realistic Environment Models
+Builds:
+- assets/models/palm_tree.glb (Lush tropical coconut palm, upright Z-up)
+- assets/models/coastal_rock.glb (Faceted granite sea-stack boulder, upright Z-up)
 """
 import bpy
 import bmesh
@@ -19,47 +19,48 @@ def create_pbr_mat(name, base_color, roughness=0.6, metallic=0.0):
         bsdf.inputs['Metallic'].default_value = metallic
     return mat
 
-# ── 1. GENERATE TROPICAL COCONUT PALM ──
+# ── 1. GENERATE TROPICAL COCONUT PALM (Z = Up, X/Y = Ground) ──
 def build_palm():
-    bpy.ops.wm.read_factory_settings(use_empty=True)
+    for obj in list(bpy.data.objects):
+        bpy.data.objects.remove(obj, do_unlink=True)
 
-    mat_trunk = create_pbr_mat("Palm_Bark", (0.38, 0.28, 0.18, 1.0), roughness=0.85)
-    mat_frond = create_pbr_mat("Palm_Frond", (0.12, 0.38, 0.14, 1.0), roughness=0.55)
-    mat_coco = create_pbr_mat("Coconut", (0.24, 0.16, 0.08, 1.0), roughness=0.88)
+    mat_trunk = create_pbr_mat("Palm_Bark", (0.34, 0.24, 0.16, 1.0), roughness=0.88)
+    mat_frond = create_pbr_mat("Palm_Frond", (0.10, 0.36, 0.12, 1.0), roughness=0.45)
+    mat_coco = create_pbr_mat("Coconut", (0.22, 0.15, 0.08, 1.0), roughness=0.85)
 
     root = bpy.data.objects.new("Palm_Root", None)
     bpy.context.collection.objects.link(root)
 
-    # 1. Segmented curved trunk
+    # 1. Segmented curved trunk (height along Z axis)
     height = 10.5
-    segments = 8
+    segments = 12
     bm_trunk = bmesh.new()
 
-    curr_pos = Vector((0, 0, 0))
     grid = []
-
     for s in range(segments + 1):
         t = s / segments
-        # Natural oceanic curve towards light
-        cx = math.sin(t * 1.2) * 1.8
-        cz = math.sin(t * 0.8) * 1.1
-        cy = t * height
+        # Organic sea-breeze trunk lean
+        cx = math.sin(t * 1.1) * 1.6
+        cy = math.sin(t * 0.7) * 0.9
+        cz = t * height
 
-        r = 0.42 * (1.0 - t * 0.45)
+        # Taper trunk from wide root base to slender crown
+        r = 0.44 * (1.0 - t * 0.48)
         ring_v = []
-        for a in range(10):
-            ang = (a / 10.0) * math.pi * 2.0
+        for a in range(12):
+            ang = (a / 12.0) * math.pi * 2.0
             vx = cx + math.cos(ang) * r
-            vz = cz + math.sin(ang) * r
-            v = bm_trunk.verts.new((vx, cy, vz))
+            vy = cy + math.sin(ang) * r
+            vz = cz
+            v = bm_trunk.verts.new((vx, vy, vz))
             ring_v.append(v)
         grid.append(ring_v)
 
     for s in range(segments):
         r1 = grid[s]
         r2 = grid[s + 1]
-        for a in range(10):
-            a_next = (a + 1) % 10
+        for a in range(12):
+            a_next = (a + 1) % 12
             bm_trunk.faces.new([r1[a], r1[a_next], r2[a_next], r2[a]])
 
     mesh_trunk = bpy.data.meshes.new("PalmTrunk_Mesh")
@@ -70,47 +71,51 @@ def build_palm():
     obj_trunk = bpy.data.objects.new("Trunk", mesh_trunk)
     obj_trunk.parent = root
     bpy.context.collection.objects.link(obj_trunk)
+    for p in mesh_trunk.polygons:
+        p.use_smooth = True
 
-    # 2. Radiating Drooping Palm Fronds
-    top_x = math.sin(1.2) * 1.8
-    top_z = math.sin(0.8) * 1.1
-    top_y = height
+    # 2. Arching Multi-Tiered Palm Canopy (14 fronds)
+    crown_x = math.sin(1.1) * 1.6
+    crown_y = math.sin(0.7) * 0.9
+    crown_z = height
 
     bm_fronds = bmesh.new()
-    num_fronds = 10
+    num_fronds = 14
 
     for f in range(num_fronds):
-        f_angle = (f / float(num_fronds)) * math.pi * 2.0
-        # Curved parabolic spine with leaflets
-        length = 5.2
-        steps = 6
+        f_ang = (f / float(num_fronds)) * math.pi * 2.0
+        # Tiered elevation: top fronds arch up, lower fronds droop down
+        tier = f % 3
+        elev = 0.45 - tier * 0.35 # elevation pitch angle
+        f_len = 5.2 - tier * 0.4
+        steps = 8
+
         for step in range(steps):
             st = step / float(steps)
             st_next = (step + 1) / float(steps)
 
-            # Arching droop
-            p1_y = top_y - math.pow(st, 1.8) * 1.6
-            p2_y = top_y - math.pow(st_next, 1.8) * 1.6
+            # Curved spine: extends out radially and droops down with gravity
+            horiz_d1 = math.cos(elev) * st * f_len
+            horiz_d2 = math.cos(elev) * st_next * f_len
+            z1 = crown_z + math.sin(elev) * st * f_len - math.pow(st, 2.2) * 2.2
+            z2 = crown_z + math.sin(elev) * st_next * f_len - math.pow(st_next, 2.2) * 2.2
 
-            d1 = st * length
-            d2 = st_next * length
+            dx = math.cos(f_ang)
+            dy = math.sin(f_ang)
+            # Perpendicular vector for leaflet width
+            perp_x = -dy
+            perp_y = dx
 
-            w1 = 0.75 * math.sin(st * math.pi)
-            w2 = 0.75 * math.sin(st_next * math.pi)
+            w1 = 0.65 * math.sin(st * math.pi)
+            w2 = 0.65 * math.sin(st_next * math.pi)
 
-            # Radial direction
-            dir_x = math.cos(f_angle)
-            dir_z = math.sin(f_angle)
-            perp_x = -dir_z
-            perp_z = dir_x
+            c1 = Vector((crown_x + dx * horiz_d1, crown_y + dy * horiz_d1, z1))
+            c2 = Vector((crown_x + dx * horiz_d2, crown_y + dy * horiz_d2, z2))
 
-            c1 = Vector((top_x + dir_x * d1, p1_y, top_z + dir_z * d1))
-            c2 = Vector((top_x + dir_x * d2, p2_y, top_z + dir_z * d2))
-
-            v1 = bm_fronds.verts.new(c1 + Vector((perp_x * w1, 0, perp_z * w1)))
-            v2 = bm_fronds.verts.new(c1 - Vector((perp_x * w1, 0, perp_z * w1)))
-            v3 = bm_fronds.verts.new(c2 - Vector((perp_x * w2, 0, perp_z * w2)))
-            v4 = bm_fronds.verts.new(c2 + Vector((perp_x * w2, 0, perp_z * w2)))
+            v1 = bm_fronds.verts.new(c1 + Vector((perp_x * w1, perp_y * w1, 0)))
+            v2 = bm_fronds.verts.new(c1 - Vector((perp_x * w1, perp_y * w1, 0)))
+            v3 = bm_fronds.verts.new(c2 - Vector((perp_x * w2, perp_y * w2, 0)))
+            v4 = bm_fronds.verts.new(c2 + Vector((perp_x * w2, perp_y * w2, 0)))
 
             bm_fronds.faces.new([v1, v2, v3, v4])
 
@@ -123,46 +128,61 @@ def build_palm():
     obj_fronds.parent = root
     bpy.context.collection.objects.link(obj_fronds)
 
+    # 3. Coconuts cluster beneath the crown
+    for c in range(6):
+        c_ang = (c / 6.0) * math.pi * 2.0
+        cx = crown_x + math.cos(c_ang) * 0.28
+        cy = crown_y + math.sin(c_ang) * 0.28
+        cz = crown_z - 0.25
+        bpy.ops.mesh.primitive_uv_sphere_add(radius=0.18, location=(cx, cy, cz))
+        obj_c = bpy.context.active_object
+        obj_c.name = f"Coconut_{c}"
+        obj_c.scale = (0.9, 0.9, 1.2)
+        obj_c.parent = root
+        obj_c.data.materials.append(mat_coco)
+
     out_path = r"c:\Users\anisa\Desktop\Ship\assets\models\palm_tree.glb"
-    print(f"Exporting palm to: {out_path}")
+    print(f"Exporting upright palm tree to: {out_path} ...")
     bpy.ops.export_scene.gltf(filepath=out_path, export_format='GLB', export_apply=True)
-    print("SUCCESS: Exported palm_tree.glb")
+    print("SUCCESS: Exported palm_tree.glb with upright Z-up orientation.")
 
-# ── 2. GENERATE COASTAL ROCK / SEA BOULDER ──
+# ── 2. GENERATE COASTAL GRANITE SEA-STACK ROCK (Z = Up) ──
 def build_rock():
-    bpy.ops.wm.read_factory_settings(use_empty=True)
+    for obj in list(bpy.data.objects):
+        bpy.data.objects.remove(obj, do_unlink=True)
 
-    mat_rock = create_pbr_mat("Granite_Rock", (0.28, 0.26, 0.25, 1.0), roughness=0.88, metallic=0.08)
+    # Dark wet maritime basalt / granite crag
+    mat_rock = create_pbr_mat("Granite_Rock", (0.09, 0.08, 0.08, 1.0), roughness=0.38, metallic=0.04)
 
     root = bpy.data.objects.new("Rock_Root", None)
     bpy.context.collection.objects.link(root)
 
-    # IcoSphere with organic sculpting displacement
-    bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=3, radius=2.5, location=(0, 1.8, 0))
+    # IcoSphere centered at Z=0.1 so bottom penetrates deep below waterline (Z down to -1.8)
+    bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=3, radius=2.2, location=(0, 0, 0.1))
     obj_rock = bpy.context.active_object
     obj_rock.name = "Coastal_Rock"
     obj_rock.parent = root
 
-    # Flatten base for shoreline resting
-    obj_rock.scale = (1.4, 0.85, 1.1)
+    obj_rock.scale = (1.35, 1.15, 0.85)
 
-    # Displace vertices to create jagged weathered cliff rock
+    # Displace vertices to create rugged weathered sea crags & jagged wave-cut waterline
     for v in obj_rock.data.vertices:
         p = v.co
-        disp = math.sin(p.x * 2.2) * math.cos(p.y * 2.4) * 0.35 + math.sin(p.z * 3.1) * 0.22
+        disp = math.sin(p.x * 2.4) * math.cos(p.y * 2.2) * 0.45 + math.sin(p.z * 3.4) * 0.32
         v.co += v.normal * disp
-        if v.co.y < 0.1:
-            v.co.y *= 0.4 # Flat waterline base
+        # Flatten and deepen underwater base so it firmly roots under ocean surface
+        if v.co.z < -0.2:
+            v.co.z *= 1.25
 
     obj_rock.data.materials.append(mat_rock)
 
     for poly in obj_rock.data.polygons:
-        poly.use_smooth = False # Faceted rocky cliff look
+        poly.use_smooth = False # Crisp faceted weathered rock
 
     out_path = r"c:\Users\anisa\Desktop\Ship\assets\models\coastal_rock.glb"
-    print(f"Exporting rock to: {out_path}")
+    print(f"Exporting coastal rock to: {out_path} ...")
     bpy.ops.export_scene.gltf(filepath=out_path, export_format='GLB', export_apply=True)
-    print("SUCCESS: Exported coastal_rock.glb")
+    print("SUCCESS: Exported coastal_rock.glb with upright Z-up orientation.")
 
 if __name__ == '__main__':
     build_palm()

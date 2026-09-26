@@ -45,17 +45,16 @@ class App {
     this.camera = new THREE.PerspectiveCamera(
       55,
       window.innerWidth / window.innerHeight,
-      0.3,
+      0.10,
       4000
     );
 
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
-      powerPreference: 'high-performance',
-      logarithmicDepthBuffer: true
+      powerPreference: 'default'
     });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.0));
     this.renderer.setClearColor(0x1a2634, 1.0);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.25;
@@ -312,15 +311,15 @@ class App {
       this.camera.lookAt(lookTarget);
 
     } else if (this.camMode === 'bridge') {
-      // First-person view from inside the wheelhouse overlooking glowing helm console
+      // First-person view from inside the wheelhouse overlooking glowing helm console & panoramic foredeck
       const bridgePos = shipPos.clone()
-        .add(up.clone().multiplyScalar(3.56))
-        .add(forward.clone().multiplyScalar(1.15));
+        .add(up.clone().multiplyScalar(3.52))
+        .add(forward.clone().multiplyScalar(1.48));
 
       this.camera.position.copy(bridgePos);
       const bridgeLook = bridgePos.clone()
-        .add(forward.clone().multiplyScalar(45.0))
-        .add(up.clone().multiplyScalar(-2.2));
+        .add(forward.clone().multiplyScalar(50.0))
+        .add(up.clone().multiplyScalar(-1.1));
       this.camera.lookAt(bridgeLook);
 
     } else if (this.camMode === 'orbit') {
@@ -355,6 +354,15 @@ class App {
 
   animate() {
     requestAnimationFrame(() => this.animate());
+
+    // 1. Pause rendering if browser tab is hidden to save GPU & battery
+    if (document.hidden) return;
+
+    // 2. Throttle rendering to smooth 60 FPS (prevents runaway 144Hz/240Hz GPU overheating)
+    const now = performance.now();
+    const elapsed = now - (this.lastFrameTime || 0);
+    if (elapsed < 16.0) return; // ~60fps target
+    this.lastFrameTime = now;
 
     let dt = this.clock.getDelta();
     dt = Math.min(dt, 0.05); // Clamp frame delta to prevent physics jumps
@@ -414,7 +422,7 @@ class App {
     this.particles.update(dt, this.ship.group, this.physics, isStorm, this.camera);
 
     // 7. Update Wildlife, AI Traffic, Islands, Buoys, Seagulls, and Clouds
-    this.wildlife.update(dt, this.time, this.ship.group.position, this.ship.group.quaternion, this.physics.speedKnots, this.islands);
+    this.wildlife.update(dt, this.time, this.ship.group.position, this.ship.group.quaternion, this.physics.speedKnots, this.islands, this.traffic, this.buoys);
     this.traffic.update(dt, this.time, this.ship.group.position, this.islands, this.physics);
     this.islands.update(dt, this.weather ? this.weather.currentPreset : null);
     this.buoys.update(dt, this.time, this.weather.currentPreset.waveScale, this.ship.group.position);
@@ -438,7 +446,7 @@ class App {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.0));
   }
 }
 

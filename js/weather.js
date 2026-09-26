@@ -103,8 +103,8 @@ export class WeatherManager {
 
     this.sunLight = new THREE.DirectionalLight(0xffffff, 2.0);
     this.sunLight.castShadow = true;
-    this.sunLight.shadow.mapSize.width = 2048;
-    this.sunLight.shadow.mapSize.height = 2048;
+    this.sunLight.shadow.mapSize.width = 1024;
+    this.sunLight.shadow.mapSize.height = 1024;
     this.sunLight.shadow.camera.near = 10;
     this.sunLight.shadow.camera.far = 650;
     this.sunLight.shadow.camera.left = -50;
@@ -196,32 +196,13 @@ export class WeatherManager {
           return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
         }
 
-        // ── Multi-octave fBm with domain warping for realistic cloud shapes ──
+        // ── Streamlined high-performance procedural cloud layer (cools GPU) ──
         float fbm(vec2 p) {
-          float v = 0.0;
-          float a = 0.5;
-          mat2 rot = mat2(0.8, 0.6, -0.6, 0.8);
-          for (int i = 0; i < 6; i++) {
-            v += a * gnoise(p);
-            p = rot * p * 2.02 + vec2(1.7, 0.9);
-            a *= 0.48;
-          }
-          return v;
+          return gnoise(p) * 0.65 + gnoise(p * 2.15) * 0.35;
         }
 
-        // ── Domain-warped fBm for naturalistic cloud formations ──
         float cloudDensity(vec2 uv, float time) {
-          vec2 q = vec2(
-            fbm(uv + vec2(0.0, 0.0) + time * 0.015),
-            fbm(uv + vec2(5.2, 1.3) - time * 0.012)
-          );
-
-          vec2 r = vec2(
-            fbm(uv + 4.0 * q + vec2(1.7, 9.2) + time * 0.008),
-            fbm(uv + 4.0 * q + vec2(8.3, 2.8) - time * 0.010)
-          );
-
-          return fbm(uv + 3.5 * r);
+          return fbm(uv + vec2(time * 0.012, -time * 0.008));
         }
 
         void main() {
@@ -276,47 +257,27 @@ export class WeatherManager {
             sky += vec3(0.65, 0.82, 1.0) * (moonCorona + moonGlow) * uMoonIntensity;
           }
 
-          // ── Volumetric Cloud Layer ──
-          if (dir.y > 0.02) {
-            // Project onto a virtual cloud plane at altitude
-            float cloudAlt = max(dir.y, 0.1);
-            vec2 cloudUV = (dir.xz / cloudAlt) * 0.22;
+          // ── Fast, Gorgeous Atmospheric Cloud Layer ──
+          if (dir.y > 0.04) {
+            float cloudAlt = max(dir.y, 0.12);
+            vec2 cloudUV = (dir.xz / cloudAlt) * 0.20;
 
-            // Domain-warped cloud density
             float density = cloudDensity(cloudUV, uTime);
+            float coverage = 0.42;
+            float cloudMask = smoothstep(coverage, coverage + 0.32, density);
+            cloudMask *= smoothstep(0.04, 0.25, dir.y);
+            cloudMask *= 1.0 - smoothstep(0.70, 0.98, dir.y) * 0.5;
 
-            // Coverage threshold
-            float coverage = 0.48;
-            float cloudMask = smoothstep(coverage, coverage + 0.28, density);
+            if (cloudMask > 0.01) {
+              vec3 cloudBright = mix(vec3(1.0, 0.98, 0.95), uSunColor, 0.30);
+              vec3 cloudDark = mix(uTopColor * 0.55, uBottomColor * 0.45, 0.35);
+              float sunInfluence = pow(sunDot, 2.0) * 0.5 + 0.5;
+              vec3 cloudColor = mix(cloudBright, cloudDark, 0.35) * sunInfluence;
 
-            // Smooth fade near horizon to prevent hard cutoff
-            cloudMask *= smoothstep(0.03, 0.28, dir.y);
+              float rim = (1.0 - smoothstep(coverage + 0.05, coverage + 0.20, density)) * pow(sunDot, 4.0) * 0.5;
+              cloudColor += uSunColor * rim;
 
-            // Height-based fade
-            cloudMask *= 1.0 - smoothstep(0.65, 0.95, dir.y) * 0.4;
-
-            if (cloudMask > 0.005) {
-              // Cloud lighting model: self-shadowing towards sun
-              vec2 sunOffset = sunDir.xz * 0.12;
-              float shadowDensity = cloudDensity(cloudUV + sunOffset, uTime);
-              float shadowFactor = smoothstep(coverage, coverage + 0.35, shadowDensity);
-
-              vec3 cloudBright = mix(vec3(1.0, 0.98, 0.95), uSunColor, 0.35);
-              vec3 cloudDark = mix(uTopColor * 0.55, uBottomColor * 0.45, 0.4);
-
-              float sunInfluence = pow(max(dot(dir, sunDir), 0.0), 2.5) * 0.55 + 0.45;
-              vec3 cloudColor = mix(cloudBright, cloudDark, shadowFactor * 0.7) * sunInfluence;
-
-              // Silver lining / rim light
-              float rim = smoothstep(coverage + 0.05, coverage + 0.15, density);
-              float rimLight = (1.0 - rim) * pow(sunDot, 4.0) * 0.6;
-              cloudColor += uSunColor * rimLight;
-
-              // Atmospheric depth tinting near horizon
-              float horizDepth = 1.0 - smoothstep(0.05, 0.4, dir.y);
-              cloudColor = mix(cloudColor, hazeColor, horizDepth * 0.45);
-
-              sky = mix(sky, cloudColor, cloudMask * 0.7);
+              sky = mix(sky, cloudColor, cloudMask * 0.65);
             }
           }
 

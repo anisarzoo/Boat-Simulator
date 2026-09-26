@@ -15,7 +15,7 @@ export class MarineWildlife {
     this.initSpoutParticles();
     this.initSplashParticles();
 
-    // Load ultra-realistic Blender GLTF models for dolphins and whales
+    // Load ultra-realistic anatomical Blender dolphin & humpback whale models
     this.loadBlenderWildlife();
   }
 
@@ -41,9 +41,13 @@ export class MarineWildlife {
             d.group.remove(d.group.children[0]);
           }
           d.group.add(clone);
-          d.tailStock = clone;
+          // Dedicated tail articulation node so fluke strokes don't pitch the entire body
+          const tailPivot = new THREE.Group();
+          tailPivot.position.set(0, 0, -1.6);
+          d.group.add(tailPivot);
+          d.tailStock = tailPivot;
         }
-        console.log('Nautilus 3D: Blender dolphin GLB model successfully applied to pod.');
+        console.log('Nautilus 3D: Anatomical Blender dolphin model successfully loaded.');
       },
       undefined,
       (err) => console.warn('Nautilus 3D: Dolphin GLB fallback to procedural:', err)
@@ -68,51 +72,66 @@ export class MarineWildlife {
             w.group.remove(w.group.children[0]);
           }
           w.group.add(clone);
-          w.tailStock = clone;
+          // Articulation sub-node for subtle tail flex
+          const tailPivot = new THREE.Group();
+          tailPivot.position.set(0, 0, -10.5);
+          w.group.add(tailPivot);
+          w.tailStock = tailPivot;
         }
-        console.log('Nautilus 3D: Blender humpback whale GLB model successfully applied.');
+        console.log('Nautilus 3D: Anatomical Blender humpback whale model successfully loaded.');
       },
       undefined,
       (err) => console.warn('Nautilus 3D: Whale GLB fallback to procedural:', err)
     );
   }
 
-  // ── 1. HIGH-DETAIL ANATOMICAL PROCEDURAL DOLPHIN MODEL ──
+  // ── 1. HIGH-DETAIL ANATOMICAL BOTTLENOSE DOLPHIN ──
   createDolphinModel() {
     const group = new THREE.Group();
 
-    // Materials
+    // ── PBR Materials ──
     const matDorsal = new THREE.MeshStandardMaterial({
-      color: 0x1e2c3a, // Deep slate ocean navy
-      roughness: 0.2,
-      metalness: 0.15
+      color: 0x2a3d52,
+      roughness: 0.18,
+      metalness: 0.12
+    });
+
+    const matBelly = new THREE.MeshStandardMaterial({
+      color: 0xd8dfe8,
+      roughness: 0.22,
+      metalness: 0.08
     });
 
     const matEye = new THREE.MeshStandardMaterial({
-      color: 0x0c0f14,
-      roughness: 0.1,
-      metalness: 0.7
+      color: 0x0a0d12,
+      roughness: 0.05,
+      metalness: 0.8
     });
 
     const matEyeGlint = new THREE.MeshBasicMaterial({ color: 0xffffff });
 
-    // 1. Smooth contoured fusiform body using multi-ring loft
+    // ── 1. Streamlined Fusiform Body via multi-ring loft ──
+    // Bottlenose dolphin: ~2.5m long, body built along +Z = forward
     const rings = [
-      { z:  1.38, rx: 0.045, ry: 0.035, y: -0.05 }, // Beak tip
-      { z:  1.18, rx: 0.095, ry: 0.075, y: -0.04 }, // Beak base
-      { z:  0.88, rx: 0.23,  ry: 0.26,  y:  0.06 }, // Melon forehead
-      { z:  0.50, rx: 0.33,  ry: 0.36,  y:  0.03 }, // Thoracic cranial
-      { z:  0.08, rx: 0.36,  ry: 0.38,  y:  0.00 }, // Mid torso
-      { z: -0.38, rx: 0.32,  ry: 0.35,  y: -0.02 }, // Dorsal base
-      { z: -0.85, rx: 0.23,  ry: 0.28,  y: -0.03 }  // Lumbar trunk
+      { z:  2.50, rx: 0.020, ry: 0.015, y: -0.02 }, // Rostrum tip (beak point)
+      { z:  2.30, rx: 0.042, ry: 0.032, y: -0.01 }, // Rostrum mid
+      { z:  2.05, rx: 0.065, ry: 0.050, y:  0.00 }, // Rostrum base / jaw hinge
+      { z:  1.75, rx: 0.155, ry: 0.170, y:  0.06 }, // Melon forehead (prominent bulge)
+      { z:  1.40, rx: 0.240, ry: 0.270, y:  0.05 }, // Cranium
+      { z:  1.00, rx: 0.310, ry: 0.340, y:  0.03 }, // Shoulder / pectoral insert
+      { z:  0.50, rx: 0.350, ry: 0.380, y:  0.00 }, // Max girth mid-torso
+      { z:  0.00, rx: 0.340, ry: 0.365, y: -0.01 }, // Dorsal fin base
+      { z: -0.50, rx: 0.300, ry: 0.330, y: -0.02 }, // Aft torso
+      { z: -1.00, rx: 0.230, ry: 0.260, y: -0.03 }, // Lumbar taper
+      { z: -1.50, rx: 0.145, ry: 0.170, y: -0.03 }, // Caudal peduncle start
+      { z: -1.85, rx: 0.080, ry: 0.110, y: -0.02 }, // Peduncle narrow
     ];
 
-    const radialSegs = 22;
+    const radialSegs = 20;
     const numRings = rings.length;
-    const bodyGeo = new THREE.BufferGeometry();
-    const positions = [];
-    const normals = [];
-    const colors = [];
+    const bodyPositions = [];
+    const bodyNormals = [];
+    const bodyColors = [];
 
     for (let r = 0; r < numRings; r++) {
       const ring = rings[r];
@@ -121,165 +140,165 @@ export class MarineWildlife {
         const cosT = Math.cos(theta);
         const sinT = Math.sin(theta);
 
-        const px = cosT * ring.rx;
-        const py = ring.y + sinT * ring.ry;
-        const pz = ring.z;
+        bodyPositions.push(cosT * ring.rx, ring.y + sinT * ring.ry, ring.z);
+        bodyNormals.push(cosT, sinT, 0);
 
-        positions.push(px, py, pz);
-        normals.push(cosT, sinT, 0.15);
-
-        // Counter-shaded vertex coloring:
-        // sinT = 1 (dorsal), sinT = -1 (belly)
-        const t = (sinT + 1) * 0.5;
-        if (t > 0.58) {
-          // Deep slate ocean navy cape
-          colors.push(0.12, 0.17, 0.23);
-        } else if (t > 0.34) {
-          // Soft blue-grey flank stripe
-          colors.push(0.32, 0.40, 0.48);
+        // Counter-shading: dorsal (top) = dark, flank = grey, belly = white
+        const dorsalFactor = (sinT + 1) * 0.5; // 0=belly, 1=dorsal
+        if (dorsalFactor > 0.62) {
+          bodyColors.push(0.16, 0.24, 0.32); // Dark steel-blue dorsal cape
+        } else if (dorsalFactor > 0.35) {
+          bodyColors.push(0.38, 0.46, 0.54); // Mid-grey flank
         } else {
-          // Clean pearl white underbelly
-          colors.push(0.92, 0.95, 0.98);
+          bodyColors.push(0.88, 0.92, 0.95); // Pearl white belly
         }
       }
     }
 
-    const indices = [];
+    const bodyIndices = [];
     for (let r = 0; r < numRings - 1; r++) {
       for (let s = 0; s < radialSegs; s++) {
         const a = r * (radialSegs + 1) + s;
         const b = (r + 1) * (radialSegs + 1) + s;
-        const c = (r + 1) * (radialSegs + 1) + (s + 1);
-        const d = r * (radialSegs + 1) + (s + 1);
-        indices.push(a, b, d);
-        indices.push(b, c, d);
+        const c = b + 1;
+        const d = a + 1;
+        bodyIndices.push(a, b, d);
+        bodyIndices.push(b, c, d);
       }
     }
 
-    bodyGeo.setIndex(indices);
-    bodyGeo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    bodyGeo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
-    bodyGeo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    const bodyGeo = new THREE.BufferGeometry();
+    bodyGeo.setIndex(bodyIndices);
+    bodyGeo.setAttribute('position', new THREE.Float32BufferAttribute(bodyPositions, 3));
+    bodyGeo.setAttribute('normal', new THREE.Float32BufferAttribute(bodyNormals, 3));
+    bodyGeo.setAttribute('color', new THREE.Float32BufferAttribute(bodyColors, 3));
     bodyGeo.computeVertexNormals();
 
-    const bodyMat = new THREE.MeshStandardMaterial({
+    const bodyMesh = new THREE.Mesh(bodyGeo, new THREE.MeshStandardMaterial({
       vertexColors: true,
-      roughness: 0.22,
-      metalness: 0.12
-    });
-    const bodyMesh = new THREE.Mesh(bodyGeo, bodyMat);
+      roughness: 0.18,
+      metalness: 0.10
+    }));
     bodyMesh.castShadow = true;
     group.add(bodyMesh);
 
-    // 2. Realistic curved Falcate Dorsal Fin with airfoil thickness
+    // ── 2. Prominent Curved Dorsal Fin (falcate) ──
     const dorsalFin = new THREE.Group();
-    dorsalFin.position.set(0, 0.34, -0.32);
+    dorsalFin.position.set(0, 0.36, -0.05);
+
     const finShape = new THREE.Shape();
     finShape.moveTo(0, 0);
-    finShape.bezierCurveTo(-0.02, 0.18, -0.06, 0.38, -0.16, 0.52);
-    finShape.bezierCurveTo(-0.14, 0.44, -0.08, 0.28, -0.32, 0.0);
+    finShape.bezierCurveTo(-0.02, 0.15, -0.05, 0.32, -0.12, 0.52);
+    finShape.bezierCurveTo(-0.08, 0.46, -0.04, 0.28, 0.10, 0.08);
+    finShape.lineTo(0.28, 0);
     finShape.closePath();
 
     const finGeo = new THREE.ExtrudeGeometry(finShape, {
-      depth: 0.038,
+      depth: 0.035,
       bevelEnabled: true,
       bevelSegments: 2,
-      steps: 1,
-      bevelSize: 0.014,
-      bevelThickness: 0.012
+      bevelSize: 0.012,
+      bevelThickness: 0.010
     });
     finGeo.rotateY(Math.PI / 2);
-    finGeo.translate(0.019, 0, 0);
-    const finMesh = new THREE.Mesh(finGeo, matDorsal);
-    dorsalFin.add(finMesh);
+    finGeo.translate(0.018, 0, 0);
+    dorsalFin.add(new THREE.Mesh(finGeo, matDorsal));
+    dorsalFin.castShadow = true;
     group.add(dorsalFin);
 
-    // 3. Anatomical Hydrofoil Pectoral Flippers (Port & Starboard)
+    // ── 3. Swept Pectoral Flippers ──
     for (const side of [-1, 1]) {
       const flipGroup = new THREE.Group();
-      flipGroup.position.set(side * 0.31, -0.08, 0.52);
-      flipGroup.rotation.set(0.18, side * 0.35, side * -0.55);
+      flipGroup.position.set(side * 0.32, -0.12, 0.85);
+      flipGroup.rotation.set(0.15, side * 0.25, side * -0.65);
 
-      const flipShape = new THREE.Shape();
-      flipShape.moveTo(0, 0);
-      flipShape.bezierCurveTo(side * 0.22, -0.08, side * 0.48, -0.22, side * 0.62, -0.38);
-      flipShape.bezierCurveTo(side * 0.46, -0.32, side * 0.26, -0.24, 0, -0.16);
-      flipShape.closePath();
+      const fShape = new THREE.Shape();
+      fShape.moveTo(0, 0);
+      fShape.bezierCurveTo(side * 0.10, -0.04, side * 0.30, -0.14, side * 0.52, -0.32);
+      fShape.bezierCurveTo(side * 0.38, -0.28, side * 0.18, -0.20, 0, -0.12);
+      fShape.closePath();
 
-      const flipGeo = new THREE.ExtrudeGeometry(flipShape, {
-        depth: 0.026,
+      const fGeo = new THREE.ExtrudeGeometry(fShape, {
+        depth: 0.022,
         bevelEnabled: true,
         bevelSegments: 2,
-        steps: 1,
-        bevelSize: 0.01,
-        bevelThickness: 0.008
+        bevelSize: 0.008,
+        bevelThickness: 0.006
       });
-      const flipMesh = new THREE.Mesh(flipGeo, matDorsal);
-      flipGroup.add(flipMesh);
+      flipGroup.add(new THREE.Mesh(fGeo, matDorsal));
       group.add(flipGroup);
     }
 
-    // 4. Expressive Eyes with Gloss Highlights
+    // ── 4. Expressive Eyes ──
     for (const side of [-1, 1]) {
-      const eyeMesh = new THREE.Mesh(
-        new THREE.SphereGeometry(0.026, 8, 8),
+      const eye = new THREE.Mesh(
+        new THREE.SphereGeometry(0.028, 8, 8),
         matEye
       );
-      eyeMesh.position.set(side * 0.225, 0.045, 0.96);
-      group.add(eyeMesh);
+      eye.position.set(side * 0.14, 0.065, 1.82);
+      group.add(eye);
 
       const glint = new THREE.Mesh(
-        new THREE.SphereGeometry(0.008, 4, 4),
+        new THREE.SphereGeometry(0.009, 4, 4),
         matEyeGlint
       );
-      glint.position.set(side * 0.24, 0.055, 0.975);
+      glint.position.set(side * 0.15, 0.075, 1.84);
       group.add(glint);
     }
 
-    // 5. Blowhole on dorsal cranium
-    const blowholeMesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.02, 0.025, 0.02, 6),
+    // ── 5. Mouth Line (jaw crease) ──
+    const jawLine = new THREE.Mesh(
+      new THREE.BoxGeometry(0.006, 0.008, 0.65),
+      new THREE.MeshStandardMaterial({ color: 0x0a0e14, roughness: 0.9 })
+    );
+    jawLine.position.set(0, -0.01, 2.15);
+    group.add(jawLine);
+
+    // ── 6. Blowhole ──
+    const blowhole = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.022, 0.028, 0.015, 6),
       matDorsal
     );
-    blowholeMesh.position.set(0, 0.31, 0.72);
-    group.add(blowholeMesh);
+    blowhole.position.set(0, 0.28, 1.50);
+    group.add(blowhole);
 
-    // 6. Two-Segment Articulated Tail Stock (Peduncle) & Horizontal Flukes
+    // ── 7. Articulated Tail Stock (Peduncle) & Horizontal Flukes ──
     const peduncleGroup = new THREE.Group();
-    peduncleGroup.position.set(0, -0.03, -0.85);
+    peduncleGroup.position.set(0, -0.02, -1.85);
 
-    const pedGeo = new THREE.CylinderGeometry(0.065, 0.22, 0.85, 14);
+    // Tapered peduncle
+    const pedGeo = new THREE.CylinderGeometry(0.035, 0.08, 0.95, 12);
     pedGeo.rotateX(-Math.PI / 2);
-    pedGeo.scale(1.0, 1.35, 1.0);
-    pedGeo.translate(0, 0, -0.42);
-    const pedMesh = new THREE.Mesh(pedGeo, matDorsal);
-    peduncleGroup.add(pedMesh);
+    pedGeo.scale(1.0, 1.4, 1.0); // vertically compressed
+    pedGeo.translate(0, 0, -0.48);
+    peduncleGroup.add(new THREE.Mesh(pedGeo, matDorsal));
 
-    // Wide Crescent Horizontal Flukes with central notch
+    // Crescent Tail Flukes
     const flukeShape = new THREE.Shape();
-    flukeShape.moveTo(0, -0.02);
-    flukeShape.bezierCurveTo(-0.18, 0.08, -0.38, 0.12, -0.52, 0.02);
-    flukeShape.bezierCurveTo(-0.42, -0.12, -0.18, -0.18, -0.04, -0.16);
-    flukeShape.lineTo(0, -0.11);
-    flukeShape.lineTo(0.04, -0.16);
-    flukeShape.bezierCurveTo(0.18, -0.18, 0.42, -0.12, 0.52, 0.02);
-    flukeShape.bezierCurveTo(0.38, 0.12, 0.18, 0.08, 0, -0.02);
+    flukeShape.moveTo(0, 0);
+    flukeShape.bezierCurveTo(-0.12, 0.06, -0.32, 0.10, -0.48, 0.02);
+    flukeShape.bezierCurveTo(-0.36, -0.10, -0.14, -0.14, -0.03, -0.12);
+    flukeShape.lineTo(0, -0.08);
+    flukeShape.lineTo(0.03, -0.12);
+    flukeShape.bezierCurveTo(0.14, -0.14, 0.36, -0.10, 0.48, 0.02);
+    flukeShape.bezierCurveTo(0.32, 0.10, 0.12, 0.06, 0, 0);
     flukeShape.closePath();
 
     const flukeGeo = new THREE.ExtrudeGeometry(flukeShape, {
-      depth: 0.024,
+      depth: 0.018,
       bevelEnabled: true,
       bevelSegments: 2,
-      steps: 1,
-      bevelSize: 0.008,
-      bevelThickness: 0.008
+      bevelSize: 0.006,
+      bevelThickness: 0.005
     });
     flukeGeo.rotateX(Math.PI / 2);
-    flukeGeo.translate(0, 0.012, -0.85);
-    const flukeMesh = new THREE.Mesh(flukeGeo, matDorsal);
-    peduncleGroup.add(flukeMesh);
+    flukeGeo.translate(0, 0.009, -0.92);
+    peduncleGroup.add(new THREE.Mesh(flukeGeo, matDorsal));
 
     group.add(peduncleGroup);
+
+    // Scale the whole dolphin up for visibility (final ~2.5m body length)
+    group.scale.setScalar(1.15);
 
     return {
       group,
@@ -287,105 +306,139 @@ export class MarineWildlife {
     };
   }
 
-  // ── 2. PROCEDURAL HUMPBACK WHALE MODEL ──
+  // ── 2. PROCEDURAL ANATOMICAL HUMPBACK WHALE MODEL ──
   createWhaleModel() {
     const group = new THREE.Group();
 
     const matWhale = new THREE.MeshStandardMaterial({
-      color: 0x141b24, // Slate black whale skin
-      roughness: 0.35,
-      metalness: 0.1
+      color: 0x181f28, // Deep slate marine mammal skin
+      roughness: 0.30,
+      metalness: 0.08
     });
 
     const matVentral = new THREE.MeshStandardMaterial({
-      color: 0x8a9ba8, // Light pleated ventral grooves
-      roughness: 0.5,
-      metalness: 0.05
+      color: 0x82929e, // Pleated ventral throat grooves
+      roughness: 0.42,
+      metalness: 0.04
     });
 
-    // Massive whale torso (14m scale)
-    const bodyGeo = new THREE.CylinderGeometry(1.4, 2.1, 8.5, 12);
-    bodyGeo.rotateX(-Math.PI / 2);
-    const body = new THREE.Mesh(bodyGeo, matWhale);
-    group.add(body);
+    // 1. Contoured Multi-Ring Fuselage Loft (14m anatomical humpback whale)
+    const rings = [
+      { z:  7.5, rx: 0.35, ry: 0.25, oy: -0.10 }, // Rostrum tip
+      { z:  5.8, rx: 1.35, ry: 0.95, oy:  0.15 }, // Head & blowhole splash guard
+      { z:  3.5, rx: 2.05, ry: 1.65, oy:  0.05 }, // Cranial throat
+      { z:  0.0, rx: 2.35, ry: 2.10, oy: -0.15 }, // Mid torso max girth (4.7m wide)
+      { z: -3.8, rx: 1.85, ry: 1.70, oy: -0.15 }, // Ventral groove termination
+      { z: -7.5, rx: 1.15, ry: 1.20, oy: -0.05 }, // Dorsal fin ridge
+      { z: -10.8, rx: 0.60, ry: 0.70, oy:  0.00 }, // Caudal peduncle
+      { z: -13.5, rx: 0.25, ry: 0.30, oy:  0.00 }  // Fluke insertion
+    ];
 
-    // Ventral throat pleats
-    const bellyGeo = new THREE.CylinderGeometry(1.3, 2.0, 7.5, 8, 1, false, 0, Math.PI);
+    const numSegs = 18;
+    const positions = [];
+    const indices = [];
+
+    // Ring vertices
+    for (const r of rings) {
+      for (let s = 0; s < numSegs; s++) {
+        const theta = (s / numSegs) * Math.PI * 2.0;
+        const x = Math.cos(theta) * r.rx;
+        const y = r.oy + Math.sin(theta) * r.ry;
+        positions.push(x, y, r.z);
+      }
+    }
+
+    // Connect rings
+    for (let r = 0; r < rings.length - 1; r++) {
+      const row1 = r * numSegs;
+      const row2 = (r + 1) * numSegs;
+      for (let s = 0; s < numSegs; s++) {
+        const sNext = (s + 1) % numSegs;
+        const a = row1 + s;
+        const b = row2 + s;
+        const c = row2 + sNext;
+        const d = row1 + sNext;
+        indices.push(a, b, d);
+        indices.push(d, b, c);
+      }
+    }
+
+    // Cap rostrum tip
+    for (let s = 0; s < numSegs - 2; s++) {
+      indices.push(0, s + 1, s + 2);
+    }
+
+    const bodyGeo = new THREE.BufferGeometry();
+    bodyGeo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    bodyGeo.setIndex(indices);
+    bodyGeo.computeVertexNormals();
+
+    const bodyMesh = new THREE.Mesh(bodyGeo, matWhale);
+    bodyMesh.castShadow = true;
+    bodyMesh.receiveShadow = true;
+    group.add(bodyMesh);
+
+    // 2. Ventral Grooves Pleat Underbelly
+    const bellyGeo = new THREE.CylinderGeometry(1.6, 2.1, 7.0, 12, 1, false, 0, Math.PI);
     bellyGeo.rotateX(-Math.PI / 2);
     bellyGeo.rotateZ(Math.PI);
+    bellyGeo.scale(0.92, 0.45, 1.0);
     const belly = new THREE.Mesh(bellyGeo, matVentral);
-    belly.position.set(0, -0.3, 0.5);
+    belly.position.set(0, -0.65, 1.8);
+    belly.receiveShadow = true;
     group.add(belly);
 
-    // Broad rostrum head with tubercles (bumps)
-    const headGeo = new THREE.SphereGeometry(1.9, 10, 8);
-    headGeo.scale(0.85, 0.75, 1.8);
-    const head = new THREE.Mesh(headGeo, matWhale);
-    head.position.set(0, 0.15, 5.2);
-    group.add(head);
-
-    // Blowhole on top of head
-    const blowhole = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.18, 0.22, 0.15, 8),
-      matWhale
-    );
-    blowhole.position.set(0, 1.48, 4.4);
-    group.add(blowhole);
-
-    // Long knobby pectoral flippers (1/3 of body length!)
-    for (const sx of [-1.8, 1.8]) {
+    // 3. Knobby Wing-Like Pectoral Flippers (4.8m long)
+    for (const sx of [-1.0, 1.0]) {
       const flipperGeo = new THREE.BufferGeometry();
       const flipperVerts = new Float32Array([
-        0, 0, 0.8,
-        0, 0, -0.8,
-        sx * 3.2, -1.2, -2.2
+        sx * 1.95, -0.3,  2.2,
+        sx * 4.85, -1.6,  0.3,
+        sx * 4.60, -1.5, -0.4,
+        sx * 1.85, -0.4,  0.8
       ]);
       flipperGeo.setAttribute('position', new THREE.BufferAttribute(flipperVerts, 3));
-      flipperGeo.setIndex([0, 1, 2, 0, 2, 1]);
+      flipperGeo.setIndex([0, 1, 2, 0, 2, 3, 2, 1, 0, 3, 2, 0]);
       flipperGeo.computeVertexNormals();
       const flipper = new THREE.Mesh(flipperGeo, matWhale);
-      flipper.position.set(sx * 1.05, -0.4, 2.5);
+      flipper.castShadow = true;
       group.add(flipper);
     }
 
-    // Small dorsal fin hump
-    const dorsalGeo = new THREE.ConeGeometry(0.35, 0.95, 4);
+    // 4. Low Stepped Dorsal Hump
+    const dorsalGeo = new THREE.ConeGeometry(0.35, 1.1, 5);
     dorsalGeo.rotateX(-0.55);
     const dorsal = new THREE.Mesh(dorsalGeo, matWhale);
-    dorsal.position.set(0, 2.15, -2.6);
+    dorsal.position.set(0, 1.45, -7.5);
+    dorsal.castShadow = true;
     group.add(dorsal);
 
-    // Whale Tail Flukes Group
+    // 5. Articulated Tail Peduncle & Flukes
     const tailStock = new THREE.Group();
-    tailStock.position.set(0, 0, -4.2);
+    tailStock.position.set(0, 0, -10.8);
 
-    const peduncleGeo = new THREE.ConeGeometry(1.35, 5.5, 8);
-    peduncleGeo.rotateX(Math.PI / 2);
-    const peduncle = new THREE.Mesh(peduncleGeo, matWhale);
-    peduncle.position.set(0, 0, -2.75);
-    tailStock.add(peduncle);
-
-    // Massive serrated tail flukes
     const flukeGeo = new THREE.BufferGeometry();
     const flukeVerts = new Float32Array([
-       0.0,  0.0, -5.4,
-      -3.4,  0.0, -6.8,
-       3.4,  0.0, -6.8,
-       0.0,  0.0, -6.1
+       0.0,  0.0, -2.7,
+      -2.4,  0.0, -4.4,
+      -2.1,  0.0, -5.0,
+       0.0,  0.0, -4.3,
+       2.1,  0.0, -5.0,
+       2.4,  0.0, -4.4
     ]);
     flukeGeo.setAttribute('position', new THREE.BufferAttribute(flukeVerts, 3));
-    flukeGeo.setIndex([0, 1, 3, 0, 3, 2, 1, 0, 3, 2, 0, 3]);
+    flukeGeo.setIndex([0, 1, 2, 0, 2, 3, 0, 3, 4, 0, 4, 5, 2, 1, 0, 3, 2, 0, 4, 3, 0, 5, 4, 0]);
     flukeGeo.computeVertexNormals();
     const flukes = new THREE.Mesh(flukeGeo, matWhale);
+    flukes.castShadow = true;
     tailStock.add(flukes);
 
     group.add(tailStock);
-    group.scale.setScalar(0.9);
 
     return {
       group,
       tailStock,
-      blowholePos: new THREE.Vector3(0, 1.5, 4.4)
+      blowholePos: new THREE.Vector3(0, 1.5, 5.8)
     };
   }
 
@@ -606,7 +659,253 @@ export class MarineWildlife {
     }
   }
 
-  update(dt, time, shipPosition, shipQuaternion, shipSpeedKnots = 0, archipelago = null) {
+  // ── 5. COMPREHENSIVE OBSTACLE AVOIDANCE & HULL PENETRATION RESOLUTION ──
+  resolveObstacles(d, dt, shipPosition, shipQuaternion, shipForward, shipRight, shipSpeedKnots, archipelago, traffic, buoys) {
+    if (!shipPosition) return;
+
+    // ── A. PLAYER SHIP HULL & SUPERSTRUCTURE AVOIDANCE ──
+    const shipQuat = shipQuaternion || new THREE.Quaternion();
+    const shipQuatInv = shipQuat.clone().invert();
+    const relPos = d.pos.clone().sub(shipPosition).applyQuaternion(shipQuatInv);
+
+    // Ship hull geometry dimensions (length 18.5m, beam 5.2m, draft 2.2m, freeboard/bridge 4.8m)
+    // Local coords: Z+ = Bow, Z- = Stern, X+ = Starboard, X- = Port, Y = Height relative to waterline center
+    const zMin = -10.5; // Stern swim platform / transom boundary
+    const zMax = 10.6;  // Bow pulpit / anchor stem boundary
+
+    // 1. Hard Hull Penetration Check
+    if (relPos.y > -2.4 && relPos.y < 5.2) {
+      if (relPos.z >= zMin && relPos.z <= zMax) {
+        // Compute tapering hull half-beam at this local longitudinal coordinate
+        let halfBeam;
+        if (relPos.z <= 1.8) {
+          halfBeam = 2.6; // Midbody and aft parallel body
+        } else {
+          const zFrac = Math.min(1.0, (relPos.z - 1.8) / 8.8);
+          halfBeam = 2.6 * Math.pow(1.0 - zFrac, 0.88) + 0.18; // Tapering clipper bow
+        }
+
+        // Safe clearance margin (0.95m for dolphin body width + pectoral fins)
+        const safeW = halfBeam + 0.95;
+
+        // Predictive steering push before touching hull
+        const steerZone = safeW + 2.4;
+        if (Math.abs(relPos.x) < steerZone) {
+          const sideDir = relPos.x !== 0 ? Math.sign(relPos.x) : (d.preferredSide >= 0 ? 1 : -1);
+          const pushFraction = (steerZone - Math.abs(relPos.x)) / 2.4;
+          d.vel.addScaledVector(shipRight, sideDir * pushFraction * 9.5 * dt);
+        }
+
+        // Hard penetration resolution: force dolphin strictly outside hull boundary!
+        if (Math.abs(relPos.x) < safeW) {
+          const sideDir = relPos.x !== 0 ? Math.sign(relPos.x) : (d.preferredSide >= 0 ? 1 : -1);
+          relPos.x = sideDir * safeW;
+
+          // Re-project hard-clamped coordinate back to world coordinates
+          d.pos.copy(relPos.clone().applyQuaternion(shipQuat).add(shipPosition));
+
+          // Deflect lateral velocity outward away from hull so dolphin glides along topsides
+          const vLocal = d.vel.clone().applyQuaternion(shipQuatInv);
+          if ((sideDir > 0 && vLocal.x < 1.0) || (sideDir < 0 && vLocal.x > -1.0)) {
+            vLocal.x = sideDir * Math.max(Math.abs(vLocal.x) * 0.7, 2.5);
+            d.vel.copy(vLocal.applyQuaternion(shipQuat));
+          }
+        }
+      }
+
+      // 2. Bow Wave High-Pressure Cushion Deflection (Ahead of stem knife-edge: Z in [10.5, 17.5])
+      if (relPos.z > zMax && relPos.z < 17.5 && Math.abs(relPos.x) < 3.4) {
+        const bowDir = relPos.x !== 0 ? Math.sign(relPos.x) : (d.preferredSide >= 0 ? 1 : -1);
+        const bowT = 1.0 - (relPos.z - zMax) / 6.9;
+        const forwardSpeed = Math.max(shipSpeedKnots * 0.514, 1.2);
+        const bowPushForce = bowT * (forwardSpeed * 1.8 + 2.5) * dt;
+        d.vel.addScaledVector(shipRight, bowDir * bowPushForce);
+
+        // Stem collision prevention: if directly in front of the knife-edge bow stem
+        if (relPos.z < 12.2 && Math.abs(relPos.x) < 1.35) {
+          relPos.x = bowDir * 1.45;
+          d.pos.copy(relPos.clone().applyQuaternion(shipQuat).add(shipPosition));
+        }
+      }
+
+      // 3. Stern Propeller Wash & Screw Turbulence Rejection (Z in [-14.5, -9.5])
+      if (relPos.z > -14.5 && relPos.z < zMin && Math.abs(relPos.x) < 3.6 && relPos.y > -2.8 && relPos.y < 0.6) {
+        const sternSide = relPos.x !== 0 ? Math.sign(relPos.x) : (d.preferredSide >= 0 ? 1 : -1);
+        d.vel.addScaledVector(shipForward, -4.2 * dt);
+        d.vel.addScaledVector(shipRight, sternSide * 4.5 * dt);
+        if (relPos.z > -10.8 && Math.abs(relPos.x) < 2.8) {
+          relPos.z = -10.9;
+          d.pos.copy(relPos.clone().applyQuaternion(shipQuat).add(shipPosition));
+        }
+      }
+    }
+
+    // ── B. AI MARINE TRAFFIC VESSELS AVOIDANCE & HARD CLAMP ──
+    if (traffic && traffic.vessels) {
+      for (const v of traffic.vessels) {
+        const dx = d.pos.x - v.pos.x;
+        const dz = d.pos.z - v.pos.z;
+        const quickDist = Math.hypot(dx, dz);
+        const maxCheckDist = ((v.length || 30) * 0.5) + 32.0;
+
+        if (quickDist < maxCheckDist) {
+          const vHeading = v.heading || 0;
+          const sinH = Math.sin(vHeading);
+          const cosH = Math.cos(vHeading);
+
+          // Project into AI vessel's local coordinate frame
+          const localZ = dx * sinH + dz * cosH;
+          const localX = dx * cosH - dz * sinH;
+
+          const halfL = (v.length || 30) * 0.5 + 2.8; // Safe half length
+          const halfB = (v.beam || 8) * 0.5 + 2.2;   // Safe half beam
+
+          const avoidZ = halfL + 18.0;
+          const avoidX = halfB + 14.0;
+
+          const absZ = Math.abs(localZ);
+          const absX = Math.abs(localX);
+
+          if (absZ < avoidZ && absX < avoidX) {
+            const signX = localX >= 0 ? 1 : -1;
+            const signZ = localZ >= 0 ? 1 : -1;
+            const penX = Math.max(0, avoidX - absX) / 14.0;
+            const penZ = Math.max(0, avoidZ - absZ) / 18.0;
+
+            const vRightX = cosH;
+            const vRightZ = -sinH;
+
+            const steerForce = (penX * 7.5 + penZ * 3.5) * dt;
+            d.vel.x += (vRightX * signX) * steerForce;
+            d.vel.z += (vRightZ * signX) * steerForce;
+
+            // Hard clamp: if inside vessel hull bounding box
+            if (absZ < halfL && absX < halfB) {
+              const overZ = halfL - absZ;
+              const overX = halfB - absX;
+
+              if (overX <= overZ) {
+                const exitX = signX * (halfB + 0.6);
+                d.pos.x = v.pos.x + exitX * cosH + localZ * sinH;
+                d.pos.z = v.pos.z - exitX * sinH + localZ * cosH;
+              } else {
+                const exitZ = signZ * (halfL + 1.2);
+                d.pos.x = v.pos.x + localX * cosH + exitZ * sinH;
+                d.pos.z = v.pos.z - localX * sinH + exitZ * cosH;
+              }
+
+              if (quickDist > 0.05) {
+                const onx = dx / quickDist;
+                const onz = dz / quickDist;
+                const vDotO = d.vel.x * onx + d.vel.z * onz;
+                if (vDotO < 0) {
+                  d.vel.x -= onx * vDotO * 1.8;
+                  d.vel.z -= onz * vDotO * 1.8;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // ── C. NAVIGATION CHANNEL BUOYS AVOIDANCE & HARD CLAMP ──
+    if (buoys && buoys.buoys) {
+      for (const b of buoys.buoys) {
+        const bdx = d.pos.x - b.baseX;
+        const bdz = d.pos.z - b.baseZ;
+        const bDist = Math.hypot(bdx, bdz);
+        const buoySafeR = 4.2;  // 1.6m collar radius + 2.6m safety margin
+        const buoyAvoidR = 10.0;
+
+        if (bDist < buoyAvoidR && bDist > 0.01) {
+          const bnx = bdx / bDist;
+          const bnz = bdz / bDist;
+
+          // Echolocation avoidance steering
+          const steer = ((buoyAvoidR - bDist) / buoyAvoidR) * 6.5 * dt;
+          d.vel.x += bnx * steer;
+          d.vel.z += bnz * steer;
+
+          // Hard perimeter clamp
+          if (bDist < buoySafeR) {
+            d.pos.x = b.baseX + bnx * buoySafeR;
+            d.pos.z = b.baseZ + bnz * buoySafeR;
+            const vDotB = d.vel.x * bnx + d.vel.z * bnz;
+            if (vDotB < 0) {
+              d.vel.x -= bnx * vDotB * 1.6;
+              d.vel.z -= bnz * vDotB * 1.6;
+            }
+          }
+        }
+      }
+    }
+
+    // ── D. HUMPBACK WHALES ACOUSTIC AVOIDANCE & HARD SEPARATION ──
+    if (this.whales) {
+      for (const w of this.whales) {
+        const wdx = d.pos.x - w.pos.x;
+        const wdz = d.pos.z - w.pos.z;
+        const wDist = Math.hypot(wdx, wdz);
+        const whaleSafeR = 11.0; // Whale LOA ~14m, max beam ~4.7m
+        const whaleAvoidR = 25.0;
+
+        if (wDist < whaleAvoidR && wDist > 0.01) {
+          const wnx = wdx / wDist;
+          const wnz = wdz / wDist;
+
+          const steer = ((whaleAvoidR - wDist) / whaleAvoidR) * 5.5 * dt;
+          d.vel.x += wnx * steer;
+          d.vel.z += wnz * steer;
+
+          if (wDist < whaleSafeR) {
+            d.pos.x = w.pos.x + wnx * whaleSafeR;
+            d.pos.z = w.pos.z + wnz * whaleSafeR;
+            const vDotW = d.vel.x * wnx + d.vel.z * wnz;
+            if (vDotW < 0) {
+              d.vel.x -= wnx * vDotW * 1.6;
+              d.vel.z -= wnz * vDotW * 1.6;
+            }
+          }
+        }
+      }
+    }
+
+    // ── E. ISLANDS, REEFS & SEA STACKS BARRIER ──
+    if (archipelago && archipelago.islands) {
+      for (const isle of archipelago.islands) {
+        const ddx = d.pos.x - isle.pos.x;
+        const ddz = d.pos.z - isle.pos.z;
+        const dDist = Math.hypot(ddx, ddz);
+        const minClearance = isle.radius + 20.0;
+        const lookahead = minClearance + 35.0;
+
+        if (dDist < lookahead && dDist > 0.01) {
+          const inx = ddx / dDist;
+          const inz = ddz / dDist;
+
+          // Coastal reef avoidance steering
+          const steer = ((lookahead - dDist) / 35.0) * 8.5 * dt;
+          d.vel.x += inx * steer;
+          d.vel.z += inz * steer;
+
+          // Hard reef shoreline barrier: never penetrate landmass
+          if (dDist < minClearance) {
+            d.pos.x = isle.pos.x + inx * minClearance;
+            d.pos.z = isle.pos.z + inz * minClearance;
+
+            const vDotN = d.vel.x * inx + d.vel.z * inz;
+            if (vDotN < 0) {
+              d.vel.x -= inx * vDotN * 1.8;
+              d.vel.z -= inz * vDotN * 1.8;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  update(dt, time, shipPosition, shipQuaternion, shipSpeedKnots = 0, archipelago = null, traffic = null, buoys = null) {
     if (!shipPosition) return;
 
     const shipForward = new THREE.Vector3(0, 0, 1);
@@ -617,82 +916,71 @@ export class MarineWildlife {
     }
 
     // ── 1. UPDATE DOLPHINS (AUTONOMOUS STEERING & BALLISTIC PARABOLIC JUMPING) ──
-    const isSailing = shipSpeedKnots > 3.0;
+    const isSailing = shipSpeedKnots > 3.5;
 
     for (const d of this.dolphins) {
-      // 1. Position always integrates smoothly from velocity (NEVER teleports or lerps rigidly to ship)
-      d.pos.addScaledVector(d.vel, dt);
+      const prevY = d.pos.y;
 
-      // Reef & Island Shoreline Avoidance (Prevents dolphins from swimming under or into islands)
-      if (archipelago && archipelago.islands) {
-        for (const isle of archipelago.islands) {
-          const ddx = d.pos.x - isle.pos.x;
-          const ddz = d.pos.z - isle.pos.z;
-          const dDist = Math.hypot(ddx, ddz);
-          const minClearance = isle.radius + 18.0;
-          if (dDist < minClearance && dDist > 0.01) {
-            const inx = ddx / dDist;
-            const inz = ddz / dDist;
-            d.pos.x = isle.pos.x + inx * minClearance;
-            d.pos.z = isle.pos.z + inz * minClearance;
+      // 1. Horizontal position integrates from velocity
+      d.pos.x += d.vel.x * dt;
+      d.pos.z += d.vel.z * dt;
 
-            // Deflect velocity radially away from shore
-            const vDotN = d.vel.x * inx + d.vel.z * inz;
-            if (vDotN < 0) {
-              d.vel.x -= inx * vDotN * 1.6;
-              d.vel.z -= inz * vDotN * 1.6;
-            }
-          }
-        }
-      }
+      // Initial dynamic obstacle avoidance pass (predictive steering + boundaries)
+      this.resolveObstacles(d, dt, shipPosition, shipQuaternion, shipForward, shipRight, shipSpeedKnots, archipelago, traffic, buoys);
 
+      // Sample exact wave elevation beneath dolphin
       const waveSample = sampleOcean(d.pos.x, d.pos.z, time, 1.0);
+      const waterSurfaceY = waveSample.height;
 
       if (d.state === 'jump') {
-        // True ballistic parabolic trajectory governed by gravity
-        d.vel.y -= 13.8 * dt;
+        // True ballistic parabolic trajectory governed by realistic oceanic gravity
+        d.pos.y += d.vel.y * dt;
+        d.vel.y -= 18.0 * dt; // Crisp natural gravity
 
-        // Splashes at breach and re-entry
-        if (!d.hasSplashedUp && d.pos.y > waveSample.height - 0.2) {
+        // Breach splash
+        if (!d.hasSplashedUp && d.pos.y > waterSurfaceY - 0.1) {
           d.hasSplashedUp = true;
-          this.triggerSplash(d.pos, 18);
+          this.triggerSplash(d.pos, 16);
         }
 
         // Ocean re-entry
-        if (d.vel.y < 0 && d.pos.y <= waveSample.height) {
+        if (d.vel.y < 0 && d.pos.y <= waterSurfaceY) {
           d.hasSplashedDown = true;
-          this.triggerSplash(d.pos, 24);
+          this.triggerSplash(d.pos, 22);
           d.state = 'dive';
-          d.diveTimer = 0.9 + Math.random() * 0.4;
-          d.jumpTimer = 7.0 + Math.random() * 5.0; // Staggered next jump (7-12 seconds)
-          d.vel.y *= 0.3; // Cushion downward momentum on entry
-          d.vel.multiplyScalar(0.82); // Hydrodynamic entry drag
+          d.diveTimer = 0.85 + Math.random() * 0.35;
+          d.jumpTimer = 9.0 + Math.random() * 7.0; // Staggered next jump (9-16 seconds)
+          d.pos.y = waterSurfaceY - 0.25; // Submerge immediately
+          d.vel.y = -2.8; // Downward dive momentum
+          d.vel.multiplyScalar(0.85); // Hydrodynamic entry drag
         }
 
         // Natural ballistic arching: nose up on ascent, arched at peak, nose down diving into sea
         const horizSpeed = Math.hypot(d.vel.x, d.vel.z);
         const targetYaw = Math.atan2(d.vel.x, d.vel.z);
         const targetPitch = Math.atan2(d.vel.y, Math.max(horizSpeed, 0.1));
-        const bankRoll = (d.preferredSide > 0 ? 0.16 : -0.16);
+        const bankRoll = (d.preferredSide > 0 ? 0.14 : -0.14);
 
-        d.yaw = THREE.MathUtils.lerp(d.yaw, targetYaw, Math.min(1.0, 7.0 * dt));
-        d.pitch = THREE.MathUtils.lerp(d.pitch, targetPitch, Math.min(1.0, 8.0 * dt));
-        d.roll = THREE.MathUtils.lerp(d.roll, bankRoll, Math.min(1.0, 4.0 * dt));
+        d.yaw = THREE.MathUtils.lerp(d.yaw, targetYaw, Math.min(1.0, 9.0 * dt));
+        d.pitch = THREE.MathUtils.lerp(d.pitch, targetPitch, Math.min(1.0, 10.0 * dt));
+        d.roll = THREE.MathUtils.lerp(d.roll, bankRoll, Math.min(1.0, 6.0 * dt));
         d.group.rotation.set(d.pitch, d.yaw, d.roll);
 
       } else if (d.state === 'dive') {
         // Smooth subsurface recovery transition after ocean re-entry
         d.diveTimer -= dt;
-        d.phase += dt * 4.5;
+        d.phase += dt * 4.8;
 
-        // Gentle buoyancy guiding dolphin back to cruise depth (~1.1m below surface)
-        const targetCruiseDepth = waveSample.height - 1.1;
-        d.vel.y += (targetCruiseDepth - d.pos.y) * 3.5 * dt;
-        d.vel.y *= Math.pow(0.82, dt * 60);
+        // Smooth guidance back to cruise depth (~1.1m beneath wave surface)
+        const targetCruiseDepth = waterSurfaceY - 1.1;
+        d.pos.y = THREE.MathUtils.lerp(d.pos.y, targetCruiseDepth, Math.min(1.0, 6.5 * dt));
+        // Hard surface ceiling: never pop out into the air during dive!
+        d.pos.y = Math.min(d.pos.y, waterSurfaceY - 0.22);
+        d.vel.y = (d.pos.y - prevY) / Math.max(dt, 0.001);
 
-        d.pitch = THREE.MathUtils.lerp(d.pitch, 0.05, 3.5 * dt);
-        d.yaw = THREE.MathUtils.lerp(d.yaw, Math.atan2(d.vel.x, d.vel.z), Math.min(1.0, 5.0 * dt));
-        d.roll = THREE.MathUtils.lerp(d.roll, 0.0, 3.0 * dt);
+        d.pitch = THREE.MathUtils.lerp(d.pitch, 0.04, 5.0 * dt);
+        d.yaw = THREE.MathUtils.lerp(d.yaw, Math.atan2(d.vel.x, d.vel.z), Math.min(1.0, 6.0 * dt));
+        d.roll = THREE.MathUtils.lerp(d.roll, 0.0, 4.0 * dt);
         d.group.rotation.set(d.pitch, d.yaw, d.roll);
 
         if (d.diveTimer <= 0) {
@@ -700,15 +988,21 @@ export class MarineWildlife {
         }
 
       } else {
-        // ── 'swim' state: Autonomous hydrodynamic cruising ──
+        // ── 'swim' state: Autonomous hydrodynamic cruising tightly coupled to wave surface ──
         d.jumpTimer -= dt;
         const swimSpeedMult = isSailing ? 5.6 : 3.4;
         d.phase += dt * swimSpeedMult;
 
         if (isSailing) {
-          // Dynamic bow wave surfing corridor (dynamic sweet spot, NOT a rigid coordinate!)
-          const fwdDist = 11.5 + Math.sin(time * 0.65 + d.id * 1.6) * 2.6;
-          const latDist = d.preferredSide + Math.sin(time * 0.42 + d.id * 2.1) * 1.6;
+          // Dynamic bow wave surfing corridor (dynamic sweet spot outside hull)
+          const fwdDist = 12.0 + Math.sin(time * 0.65 + d.id * 1.6) * 2.2;
+          let latDist = d.preferredSide + Math.sin(time * 0.42 + d.id * 2.1) * 1.4;
+          // Ensure sweet spot corridor stays safely in the open water bow wave crest outside the hull
+          if (d.preferredSide > 0) {
+            latDist = Math.max(latDist, 3.8);
+          } else {
+            latDist = Math.min(latDist, -3.8);
+          }
 
           let sweetSpot = shipPosition.clone()
             .addScaledVector(shipForward, fwdDist)
@@ -718,7 +1012,7 @@ export class MarineWildlife {
           if (archipelago && archipelago.islands) {
             for (const isle of archipelago.islands) {
               const ssDist = Math.hypot(sweetSpot.x - isle.pos.x, sweetSpot.z - isle.pos.z);
-              const minClearance = isle.radius + 22.0;
+              const minClearance = isle.radius + 24.0;
               if (ssDist < minClearance && ssDist > 0.01) {
                 const snx = (sweetSpot.x - isle.pos.x) / ssDist;
                 const snz = (sweetSpot.z - isle.pos.z) / ssDist;
@@ -742,8 +1036,21 @@ export class MarineWildlife {
             .normalize();
 
           const desiredVel = steerHeading.multiplyScalar(desiredSpeed);
-          const steerAccel = desiredVel.sub(d.vel).clampLength(0, 13.5 * dt);
+          const steerAccel = desiredVel.sub(d.vel).clampLength(0, 14.0 * dt);
           d.vel.add(steerAccel);
+
+          // Initiate bow wave breach ONLY when sailing fast and timer expires
+          if (d.jumpTimer <= 0 && shipSpeedKnots >= 5.0) {
+            d.state = 'jump';
+            d.hasSplashedUp = false;
+            d.hasSplashedDown = false;
+            const horizDir = new THREE.Vector3(d.vel.x, 0, d.vel.z).normalize();
+            d.vel.y = 5.8 + Math.random() * 1.2; // Natural playful bow breach (1.2m apex)
+            d.vel.addScaledVector(horizDir, 2.2);
+            // Ensure ballistic arc angles diagonally AWAY from ship hull
+            const outwardDir = (d.preferredSide >= 0 ? 1 : -1);
+            d.vel.addScaledVector(shipRight, outwardDir * 1.8);
+          }
 
         } else {
           // Idle swimming in wide, peaceful orbits around vessel
@@ -769,8 +1076,8 @@ export class MarineWildlife {
 
           const toOrbit = orbitTarget.clone().sub(d.pos);
           toOrbit.y = 0;
-          const desiredVel = toOrbit.normalize().multiplyScalar(4.2);
-          const steerAccel = desiredVel.sub(d.vel).clampLength(0, 6.5 * dt);
+          const desiredVel = toOrbit.normalize().multiplyScalar(3.8);
+          const steerAccel = desiredVel.sub(d.vel).clampLength(0, 7.5 * dt);
           d.vel.add(steerAccel);
         }
 
@@ -786,34 +1093,32 @@ export class MarineWildlife {
           }
         }
 
-        // Subsurface cruising depth following wave profile smoothly (0.8m to 1.3m depth)
-        const targetSwimY = waveSample.height - 0.95 + Math.sin(d.phase) * 0.22;
-        d.vel.y += (targetSwimY - d.pos.y) * 4.2 * dt;
-        d.vel.y *= Math.pow(0.85, dt * 60);
+        // Subsurface cruising depth following wave profile snugly (0.7m to 0.95m depth)
+        const targetSwimY = waterSurfaceY - 0.78 + Math.sin(d.phase) * 0.18;
+        // Fast responsive vertical lerp ensures dolphin never gets left behind floating above wave troughs!
+        d.pos.y = THREE.MathUtils.lerp(d.pos.y, targetSwimY, Math.min(1.0, 11.0 * dt));
+        // Strict physical surface ceiling: NEVER float in the air while swimming!
+        d.pos.y = Math.min(d.pos.y, waterSurfaceY - 0.18);
+        d.vel.y = (d.pos.y - prevY) / Math.max(dt, 0.001);
 
-        // Initiate parabolic breach when jump timer expires
-        if (d.jumpTimer <= 0) {
-          d.state = 'jump';
-          d.hasSplashedUp = false;
-          d.hasSplashedDown = false;
-          const horizDir = new THREE.Vector3(d.vel.x, 0, d.vel.z).normalize();
-          d.vel.y = 7.2 + Math.random() * 2.2; // Upward impulse
-          d.vel.addScaledVector(horizDir, 3.6); // Forward surge through wave crest
-        }
-
-        // Fluid swimming orientation
+        // Fluid undulating swimming orientation
         const targetYaw = Math.atan2(d.vel.x, d.vel.z);
-        const targetPitch = Math.cos(d.phase) * 0.22 + THREE.MathUtils.clamp(d.vel.y * 0.12, -0.28, 0.28);
-        const targetRoll = THREE.MathUtils.clamp(-d.vel.x * 0.04, -0.22, 0.22);
+        const waveSlopePitch = Math.cos(d.phase) * 0.16 + THREE.MathUtils.clamp(d.vel.y * 0.08, -0.22, 0.22);
+        const targetRoll = THREE.MathUtils.clamp(-d.vel.x * 0.03, -0.18, 0.18);
 
-        d.yaw = THREE.MathUtils.lerp(d.yaw, targetYaw, Math.min(1.0, 5.0 * dt));
-        d.pitch = THREE.MathUtils.lerp(d.pitch, targetPitch, Math.min(1.0, 6.0 * dt));
-        d.roll = THREE.MathUtils.lerp(d.roll, targetRoll, Math.min(1.0, 4.0 * dt));
+        d.yaw = THREE.MathUtils.lerp(d.yaw, targetYaw, Math.min(1.0, 6.0 * dt));
+        d.pitch = THREE.MathUtils.lerp(d.pitch, waveSlopePitch, Math.min(1.0, 7.0 * dt));
+        d.roll = THREE.MathUtils.lerp(d.roll, targetRoll, Math.min(1.0, 5.0 * dt));
         d.group.rotation.set(d.pitch, d.yaw, d.roll);
       }
 
-      // Propulsive fluke stroke
-      d.tailStock.rotation.x = Math.sin(d.phase * 2.0) * 0.52;
+      // Final airtight obstacle resolution & hard clamp pass (prevents any frame-end penetration)
+      this.resolveObstacles(d, dt, shipPosition, shipQuaternion, shipForward, shipRight, shipSpeedKnots, archipelago, traffic, buoys);
+
+      // Propulsive fluke stroke (only articulates the tail pivot, never tilts the whole body!)
+      if (d.tailStock) {
+        d.tailStock.rotation.x = Math.sin(d.phase * 2.0) * 0.42;
+      }
       d.group.position.copy(d.pos);
     }
 

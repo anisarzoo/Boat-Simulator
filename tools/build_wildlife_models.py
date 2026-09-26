@@ -1,13 +1,18 @@
 """
-Blender 5.2 Python Script: Generate Realistic Marine Wildlife 3D Models
+Blender 5.2 Python Script: Generate Anatomical Marine Wildlife 3D Models
+Properly mapped for Three.js coordinates (+X=Right, +Y=Up, +Z=Forward)
 Exports:
-- assets/models/dolphin.glb
-- assets/models/whale.glb
+- assets/models/dolphin.glb (2.5m Bottlenose Dolphin with falcate dorsal fin)
+- assets/models/whale.glb (14m Humpback Whale with pleated throat and wing flippers)
 """
 import bpy
 import bmesh
 import math
 from mathutils import Vector, Matrix
+
+# Coordinate conversion: Three.js (x, y=height, z=forward) -> Blender (X=x, Y=-z, Z=y)
+def B(x, y, z):
+    return Vector((x, -z, y))
 
 def create_pbr_mat(name, base_color, roughness=0.3, metallic=0.0):
     mat = bpy.data.materials.new(name=name)
@@ -19,17 +24,25 @@ def create_pbr_mat(name, base_color, roughness=0.3, metallic=0.0):
         bsdf.inputs['Metallic'].default_value = metallic
     return mat
 
-# ── 1. GENERATE ANATOMICAL BOTTLENOSE DOLPHIN ──
+def clean_scene():
+    for obj in list(bpy.data.objects):
+        bpy.data.objects.remove(obj, do_unlink=True)
+    for mesh in list(bpy.data.meshes):
+        bpy.data.meshes.remove(mesh, do_unlink=True)
+    for mat in list(bpy.data.materials):
+        bpy.data.materials.remove(mat, do_unlink=True)
+
+# ── 1. GENERATE ANATOMICAL BOTTLENOSE DOLPHIN (Z = Forward, Y = Up) ──
 def build_dolphin():
-    bpy.ops.wm.read_factory_settings(use_empty=True)
+    clean_scene()
     
-    mat_dorsal = create_pbr_mat("Dolphin_Skin", (0.11, 0.16, 0.22, 1.0), roughness=0.18, metallic=0.08)
-    mat_eye = create_pbr_mat("Dolphin_Eye", (0.02, 0.03, 0.04, 1.0), roughness=0.05, metallic=0.8)
+    mat_dorsal = create_pbr_mat("Dolphin_Skin", (0.12, 0.18, 0.26, 1.0), roughness=0.20, metallic=0.08)
+    mat_belly = create_pbr_mat("Dolphin_Belly", (0.75, 0.82, 0.88, 1.0), roughness=0.25, metallic=0.05)
 
     root = bpy.data.objects.new("Dolphin_Root", None)
     bpy.context.collection.objects.link(root)
 
-    # Lofted organic fuselage rings along Z axis: [z, radius_x, radius_y, offset_y]
+    # Fuselage rings: [z (forward), rx, ry, oy (height offset)]
     rings = [
         (1.50, 0.03, 0.025, -0.04),  # Beak tip
         (1.30, 0.08, 0.065, -0.03),  # Beak base
@@ -50,10 +63,9 @@ def build_dolphin():
         ring_verts = []
         for s in range(num_segs):
             theta = (s / num_segs) * math.pi * 2.0
-            px = math.cos(theta) * rx
-            py = oy + math.sin(theta) * ry
-            pz = z
-            v = bm.verts.new((px, py, pz))
+            x = math.cos(theta) * rx
+            y = oy + math.sin(theta) * ry
+            v = bm.verts.new(B(x, y, z))
             ring_verts.append(v)
         grid.append(ring_verts)
 
@@ -62,20 +74,19 @@ def build_dolphin():
         r2 = grid[r + 1]
         for s in range(num_segs):
             s_next = (s + 1) % num_segs
-            bm.faces.new([r1[s], r1[s_next], r2[s_next], r2[s]])
+            f = bm.faces.new([r1[s], r1[s_next], r2[s_next], r2[s]])
+            # Bottom half of rings is lighter belly
+            f.material_index = 1 if (s > num_segs * 0.4 and s < num_segs * 0.9) else 0
 
-    # Cap snout tip and peduncle
     bm.faces.new(grid[0])
     bm.faces.new(list(reversed(grid[-1])))
 
-    # Dorsal fin (curved falcate foil)
-    df_pts = [
-        (0.0, 0.32, -0.20), (0.0, 0.65, -0.42), (0.0, 0.58, -0.52), (0.0, 0.32, -0.55)
-    ]
-    df_verts = [bm.verts.new(p) for p in df_pts]
-    bm.faces.new(df_verts)
+    # Falcate curved dorsal fin
+    df_pts = [(0.0, 0.32, -0.20), (0.0, 0.65, -0.42), (0.0, 0.58, -0.52), (0.0, 0.32, -0.55)]
+    df_v = [bm.verts.new(B(p[0], p[1], p[2])) for p in df_pts]
+    bm.faces.new(df_v)
 
-    # Pectoral flippers
+    # Swept pectoral flippers
     for side in [-1.0, 1.0]:
         pf_pts = [
             (side * 0.28, -0.10, 0.45),
@@ -83,10 +94,10 @@ def build_dolphin():
             (side * 0.68, -0.30, 0.12),
             (side * 0.26, -0.12, 0.22)
         ]
-        pf_verts = [bm.verts.new(p) for p in pf_pts]
-        bm.faces.new(pf_verts)
+        pf_v = [bm.verts.new(B(p[0], p[1], p[2])) for p in pf_pts]
+        bm.faces.new(pf_v)
 
-    # Horizontal tail flukes (wide hydrofoil)
+    # Horizontal tail flukes
     tf_pts = [
         (0.0, -0.04, -1.58),
         (-0.48, -0.04, -1.82),
@@ -95,7 +106,7 @@ def build_dolphin():
         (0.42, -0.04, -1.95),
         (0.48, -0.04, -1.82)
     ]
-    tf_v = [bm.verts.new(p) for p in tf_pts]
+    tf_v = [bm.verts.new(B(p[0], p[1], p[2])) for p in tf_pts]
     bm.faces.new([tf_v[0], tf_v[1], tf_v[2], tf_v[3]])
     bm.faces.new([tf_v[0], tf_v[3], tf_v[4], tf_v[5]])
 
@@ -103,6 +114,7 @@ def build_dolphin():
     bm.to_mesh(mesh)
     bm.free()
     mesh.materials.append(mat_dorsal)
+    mesh.materials.append(mat_belly)
 
     obj = bpy.data.objects.new("Dolphin", mesh)
     obj.parent = root
@@ -119,26 +131,26 @@ def build_dolphin():
     bpy.ops.export_scene.gltf(filepath=out_path, export_format='GLB', export_apply=True)
     print("SUCCESS: Exported dolphin.glb")
 
-# ── 2. GENERATE HUMPBACK WHALE (15m LEVIATHAN) ──
+# ── 2. GENERATE ANATOMICAL HUMPBACK WHALE (14m LEVIATHAN) ──
 def build_whale():
-    bpy.ops.wm.read_factory_settings(use_empty=True)
+    clean_scene()
     
-    mat_whale = create_pbr_mat("Whale_Skin", (0.08, 0.10, 0.12, 1.0), roughness=0.35, metallic=0.05)
-    mat_belly = create_pbr_mat("Whale_Belly", (0.65, 0.68, 0.72, 1.0), roughness=0.45, metallic=0.0)
+    mat_whale = create_pbr_mat("Whale_Skin", (0.07, 0.09, 0.12, 1.0), roughness=0.30, metallic=0.06)
+    mat_belly = create_pbr_mat("Whale_Belly", (0.55, 0.60, 0.65, 1.0), roughness=0.45, metallic=0.02)
 
     root = bpy.data.objects.new("Whale_Root", None)
     bpy.context.collection.objects.link(root)
 
-    # Massive contoured fuselage rings: [z, rx, ry, oy]
+    # Massive contoured fuselage rings: [z (forward), rx, ry, oy]
     rings = [
-        (7.5, 0.4, 0.35, 0.0),    # Rostrum tip
-        (5.8, 1.3, 1.10, 0.1),    # Head with blowhole crest
-        (3.5, 1.85, 1.70, 0.0),   # Cranial throat
-        (0.0, 2.15, 2.10, -0.1),  # Mid torso max girth (4.3m wide)
-        (-3.8, 1.70, 1.65, -0.1), # Ventral groove termination
-        (-7.5, 1.05, 1.15, -0.05),# Dorsal fin ridge
-        (-10.8, 0.55, 0.65, 0.0), # Caudal peduncle
-        (-13.5, 0.25, 0.30, 0.0)  # Fluke insertion
+        (7.5, 0.35, 0.25, -0.1),   # Rostrum tip
+        (5.8, 1.35, 0.95, 0.15),   # Head with blowhole splash guard
+        (3.5, 2.05, 1.65, 0.05),   # Cranial throat
+        (0.0, 2.35, 2.10, -0.15),  # Mid torso max girth (4.7m wide)
+        (-3.8, 1.85, 1.70, -0.15), # Ventral groove termination
+        (-7.5, 1.15, 1.20, -0.05), # Dorsal fin ridge
+        (-10.8, 0.60, 0.70, 0.0),  # Caudal peduncle
+        (-13.5, 0.25, 0.30, 0.0)   # Fluke insertion
     ]
 
     bm = bmesh.new()
@@ -149,10 +161,9 @@ def build_whale():
         ring_verts = []
         for s in range(num_segs):
             theta = (s / num_segs) * math.pi * 2.0
-            px = math.cos(theta) * rx
-            py = oy + math.sin(theta) * ry
-            pz = z
-            v = bm.verts.new((px, py, pz))
+            x = math.cos(theta) * rx
+            y = oy + math.sin(theta) * ry
+            v = bm.verts.new(B(x, y, z))
             ring_verts.append(v)
         grid.append(ring_verts)
 
@@ -161,28 +172,30 @@ def build_whale():
         r2 = grid[r + 1]
         for s in range(num_segs):
             s_next = (s + 1) % num_segs
-            bm.faces.new([r1[s], r1[s_next], r2[s_next], r2[s]])
+            f = bm.faces.new([r1[s], r1[s_next], r2[s_next], r2[s]])
+            # Ventral pleats on lower half forward of mid-torso
+            f.material_index = 1 if (r < 5 and s > num_segs * 0.4 and s < num_segs * 0.9) else 0
 
     bm.faces.new(grid[0])
     bm.faces.new(list(reversed(grid[-1])))
 
-    # Low stepped dorsal fin
-    df_pts = [(0.0, 1.65, -7.2), (0.0, 2.15, -7.8), (0.0, 1.55, -8.3)]
-    df_v = [bm.verts.new(p) for p in df_pts]
+    # Low stepped dorsal fin on back ridge
+    df_pts = [(0.0, 1.45, -7.2), (0.0, 2.10, -7.8), (0.0, 1.35, -8.3)]
+    df_v = [bm.verts.new(B(p[0], p[1], p[2])) for p in df_pts]
     bm.faces.new(df_v)
 
-    # 4.8m long wing-like pectoral flippers
+    # 4.8m long wing-like pectoral flippers (Humpback signature)
     for side in [-1.0, 1.0]:
         pf_pts = [
             (side * 1.95, -0.4, 2.2),
-            (side * 4.65, -1.8, 0.4),
-            (side * 4.40, -1.7, -0.3),
+            (side * 4.85, -1.8, 0.3),
+            (side * 4.60, -1.7, -0.4),
             (side * 1.85, -0.5, 0.8)
         ]
-        pf_v = [bm.verts.new(p) for p in pf_pts]
+        pf_v = [bm.verts.new(B(p[0], p[1], p[2])) for p in pf_pts]
         bm.faces.new(pf_v)
 
-    # 4.5m broad serrated tail flukes
+    # 4.8m broad serrated tail flukes
     tf_pts = [
         (0.0, 0.0, -13.5),
         (-2.4, 0.0, -15.2),
@@ -191,7 +204,7 @@ def build_whale():
         (2.1, 0.0, -15.8),
         (2.4, 0.0, -15.2)
     ]
-    tf_v = [bm.verts.new(p) for p in tf_pts]
+    tf_v = [bm.verts.new(B(p[0], p[1], p[2])) for p in tf_pts]
     bm.faces.new([tf_v[0], tf_v[1], tf_v[2], tf_v[3]])
     bm.faces.new([tf_v[0], tf_v[3], tf_v[4], tf_v[5]])
 
@@ -199,6 +212,7 @@ def build_whale():
     bm.to_mesh(mesh)
     bm.free()
     mesh.materials.append(mat_whale)
+    mesh.materials.append(mat_belly)
 
     obj = bpy.data.objects.new("Whale", mesh)
     obj.parent = root

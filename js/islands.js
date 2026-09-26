@@ -13,37 +13,226 @@ export class Archipelago {
 
     this.initIslands();
     this.initLighthouse();
+    // Load high-detail Blender tropical palms and coastal boulders
     this.loadBlenderFoliage();
   }
 
-  // ── 1. PROCEDURAL ROCKY ISLAND GEOMETRY GENERATOR ──
-  createIslandGeometry(radius, height, segments) {
-    const geo = new THREE.CylinderGeometry(radius * 0.45, radius, height, segments, 8);
-    const pos = geo.attributes.position;
+  // ── 1. PROCEDURAL ORGANIC ISLAND GEOMETRY GENERATOR ──
+  createOrganicIslandGeometry(radius, height, seed = 0, isStack = false) {
+    const numRings = isStack ? 24 : 36;
+    const numSlices = isStack ? 32 : 48;
+    const positions = [];
+    const colors = [];
+    const indices = [];
 
-    // Organic mountain/cliff sculpting using multi-frequency displacement
-    for (let i = 0; i < pos.count; i++) {
-      const x = pos.getX(i);
-      const y = pos.getY(i);
-      const z = pos.getZ(i);
+    // Continuous analytical elevation function for the island landmass
+    const evalElevation = (r, theta) => {
+      const u = r / radius; // 0.0 at summit peak, 1.0 at beach line, 1.25 at submerged shoal
+      // Natural asymmetric perimeter lobes & coastal coves
+      const lobe1 = Math.cos(theta * 2.0 + seed) * 0.12;
+      const lobe2 = Math.sin(theta * 3.0 + seed * 1.5) * 0.07;
+      const lobe3 = Math.cos(theta * 5.0) * 0.04;
+      const radMod = 1.0 + lobe1 + lobe2 + lobe3;
+      const effU = u / Math.max(0.4, radMod);
 
-      const angle = Math.atan2(z, x);
-      const dist = Math.sqrt(x * x + z * z);
+      if (isStack) {
+        // Dramatic jagged oceanic sea stack (needle spire with columnar basalt facets)
+        if (effU < 0.22) {
+          // Sharp jagged needle pinnacle summit
+          const t = effU / 0.22;
+          const peakCrest = height * (1.0 - 0.28 * Math.pow(t, 1.4));
+          const pinnacleSpire = Math.abs(Math.cos(theta * 2.0 + seed)) * 4.2 * (1.0 - t);
+          return peakCrest + pinnacleSpire;
+        } else if (effU < 0.78) {
+          // Sheer near-vertical columnar basalt cliff faces with deep wave-cut fissures
+          const cliffT = (effU - 0.22) / (0.78 - 0.22);
+          const baseCliffY = height * 0.72 * Math.pow(1.0 - cliffT, 0.75);
+          // Vertical columnar basalt fluting & sharp craggy buttresses
+          const columnarCrags = (Math.sin(theta * 8.0 + seed) * 3.8 + Math.cos(theta * 16.0) * 1.8) * Math.sin(cliffT * Math.PI);
+          return Math.max(0.4, baseCliffY + columnarCrags);
+        } else if (effU <= 1.0) {
+          // Wave-battered rocky coastal shelf
+          const shelfT = (effU - 0.78) / (1.0 - 0.78);
+          return 0.4 * (1.0 - shelfT) + 0.15;
+        } else {
+          // Submerged sea stack reef base
+          const footT = (effU - 1.0) / 0.25;
+          return Math.max(-12.0, 0.15 - footT * 8.5);
+        }
+      }
 
-      // Craggy cliff facets
-      const crag1 = Math.sin(angle * 5.0) * Math.cos(y * 0.25) * 6.0;
-      const crag2 = Math.cos(angle * 9.0 + y * 0.4) * 3.5;
-      const crag3 = Math.sin(angle * 17.0) * 1.8;
+      // Island profile:
+      // 1. Naturally rounded mountain dome crest: effU in [0, 0.42] (dY/du -> 0 at center!)
+      // 2. Craggy basalt slopes & ravines: effU in [0.42, 0.85]
+      // 3. Gentle golden sand coastal apron: effU in [0.85, 1.0]
+      // 4. Submerged wave-cut coral reef shoal: effU in [1.0, 1.25]
+      let y = 0;
+      if (effU < 0.42) {
+        // Paraboloid dome crest - smooth rounded summit, NO tabletop disc!
+        const t = effU / 0.42;
+        y = height * (1.0 - 0.18 * Math.pow(t, 1.8));
+      } else if (effU < 0.85) {
+        const t = (effU - 0.42) / (0.85 - 0.42);
+        // Smooth Hermite S-curve connecting summit to beach
+        const s = 1.0 - (t * t * (3.0 - 2.0 * t));
+        y = 2.4 + (height * 0.82 - 2.4) * s;
+        // Natural mountain crags & gullies
+        const crag = (Math.sin(theta * 5.0 + effU * 4.0) * 2.5 + Math.cos(theta * 11.0) * 1.2) * Math.sin(t * Math.PI);
+        y += crag;
+      } else if (effU <= 1.0) {
+        // Gentle sandy beach slope from 2.4m down to 0.15m at surf
+        const t = (effU - 0.85) / (1.0 - 0.85);
+        y = 2.4 * (1.0 - t) + 0.15;
+      } else {
+        // Submerged wave-cut reef shelf dipping into deep water
+        const t = (effU - 1.0) / 0.25;
+        y = 0.15 - t * 7.5;
+      }
 
-      if (dist > 1.0) {
-        const factor = 1.0 + (crag1 + crag2 + crag3) / radius;
-        pos.setX(i, x * factor);
-        pos.setZ(i, z * factor);
+      // Subtle natural ridgeline across the entire landmass
+      const ridge = Math.sin(theta * 3.0 + seed) * 1.6 * Math.max(0.0, 1.0 - effU);
+      return y + ridge;
+    };
+
+    // Center summit apex vertex (index 0)
+    const apexY = evalElevation(0, 0);
+    positions.push(0, apexY, 0);
+    colors.push(0.18, 0.38, 0.18); // Apex color: lush plateau green
+
+    // Grid of concentric rings
+    for (let rIdx = 1; rIdx <= numRings; rIdx++) {
+      const ringFrac = rIdx / numRings;
+      const r = radius * (ringFrac * 1.25);
+
+      for (let sIdx = 0; sIdx < numSlices; sIdx++) {
+        const theta = (sIdx / numSlices) * Math.PI * 2.0;
+        const x = Math.cos(theta) * r;
+        const z = Math.sin(theta) * r;
+        const y = evalElevation(r, theta);
+
+        positions.push(x, y, z);
+        colors.push(0.2, 0.2, 0.2); // Placeholder, colored in pass 2 with normals
       }
     }
 
+    // Connect apex (index 0) to Ring 1
+    for (let sIdx = 0; sIdx < numSlices; sIdx++) {
+      const sNext = (sIdx + 1) % numSlices;
+      const v1 = 1 + sIdx;
+      const v2 = 1 + sNext;
+      indices.push(0, v1, v2);
+    }
+
+    // Connect rings together
+    for (let rIdx = 1; rIdx < numRings; rIdx++) {
+      const rowStart = 1 + (rIdx - 1) * numSlices;
+      const nextRowStart = 1 + rIdx * numSlices;
+
+      for (let sIdx = 0; sIdx < numSlices; sIdx++) {
+        const sNext = (sIdx + 1) % numSlices;
+        const a = rowStart + sIdx;
+        const b = nextRowStart + sIdx;
+        const c = nextRowStart + sNext;
+        const d = rowStart + sNext;
+
+        indices.push(a, b, d);
+        indices.push(d, b, c);
+      }
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    geo.setIndex(indices);
     geo.computeVertexNormals();
-    return geo;
+
+    // Pass 2: Slope & Elevation-aware vertex coloring
+    const normAttr = geo.attributes.normal;
+    const posAttr = geo.attributes.position;
+    const colAttr = geo.attributes.color;
+
+    const colGrassPeak = new THREE.Color(0x356630); // Bright emerald summit turf
+    const colGrassMid  = new THREE.Color(0x274e24); // Coastal turf
+    const colRock      = new THREE.Color(0x38332d); // Weathered basalt/granite
+    const colRockDark  = new THREE.Color(0x23201d); // Deep cliff shadows
+    const colSand      = new THREE.Color(0xd2be92); // Warm golden beach sand
+    const colWetSand   = new THREE.Color(0x6a5e4c); // Wet sand at waterline
+    const colShoal     = new THREE.Color(0x2d3a33); // Submerged marine reef
+
+    const tempCol = new THREE.Color();
+
+    for (let i = 0; i < posAttr.count; i++) {
+      const y = posAttr.getY(i);
+      const ny = normAttr.getY(i); // 1 = horizontal, 0 = vertical cliff
+
+      if (isStack) {
+        // Pure oceanic sea stack rock coloring (100% natural stone, zero grass)
+        if (y < 0.25) {
+          tempCol.copy(colShoal);
+        } else if (y < 1.4) {
+          // Wet wave-battered tide line with dark marine kelp
+          const t = (y - 0.25) / 1.15;
+          tempCol.copy(colShoal).lerp(new THREE.Color(0x182018), t);
+        } else {
+          // Geological basalt & granite strata banding with weathered salt/guano crests
+          const strata = Math.sin(y * 0.48) * 0.08 + Math.cos(y * 1.05) * 0.04;
+          const colDeepBasalt = new THREE.Color(0x201d1b);
+          const colGranite = new THREE.Color(0x3a342e);
+          const colGuanoCrest = new THREE.Color(0x7c756b);
+          const heightFrac = Math.min(1.0, (y - 1.4) / (height - 1.4));
+
+          if (ny < 0.45) {
+            // Sheer vertical cliff shadows & fissure recesses
+            tempCol.copy(colDeepBasalt);
+          } else {
+            // Weathered rock face with horizontal sedimentary strata and lighter bird-roosting pinnacle crests
+            tempCol.copy(colGranite).lerp(colGuanoCrest, heightFrac * 0.8 + strata);
+          }
+        }
+      } else {
+        // Mountain body with grass, rock, and sandy beach
+        if (y < 0.2) {
+          // Submerged wave-cut shoal
+          tempCol.copy(colShoal);
+        } else if (y < 1.2) {
+          // Wet beach shoreline
+          const t = (y - 0.2) / 1.0;
+          tempCol.copy(colShoal).lerp(colWetSand, t);
+        } else if (y < 3.2 && ny > 0.55) {
+          // Golden sandy beach apron
+          const t = (y - 1.2) / 2.0;
+          tempCol.copy(colWetSand).lerp(colSand, t);
+        } else {
+          // Mountain body: slope determines grass vs rock
+          if (ny > 0.68) {
+            // Gentle plateau or ridge: rich green grass
+            const peakT = Math.min(1.0, (y - 3.2) / (height - 3.2));
+            tempCol.copy(colGrassMid).lerp(colGrassPeak, peakT);
+          } else if (ny > 0.45) {
+            // Transition slope: mixed rock and mossy turf
+            const t = (ny - 0.45) / (0.68 - 0.45);
+            tempCol.copy(colRock).lerp(colGrassMid, t);
+          } else {
+            // Steep cliff wall: rugged dark basalt crags
+            const darkT = Math.min(1.0, (0.45 - ny) / 0.45);
+            tempCol.copy(colRock).lerp(colRockDark, darkT);
+          }
+        }
+      }
+
+      colAttr.setXYZ(i, tempCol.r, tempCol.g, tempCol.b);
+    }
+    colAttr.needsUpdate = true;
+
+    return {
+      geometry: geo,
+      apexY: apexY,
+      getElevation: (x, z) => {
+        const r = Math.sqrt(x * x + z * z);
+        const theta = Math.atan2(z, x);
+        return evalElevation(r, theta);
+      }
+    };
   }
 
   // ── PROCEDURAL COASTAL PINE TREE GENERATOR ──
@@ -229,8 +418,8 @@ export class Archipelago {
           const clone = palmTemplate.clone();
           const s = item.height / 10.5;
           clone.scale.set(s, s, s);
-          clone.rotation.x = item.curveZ * 0.35;
-          clone.rotation.z = -item.curveX * 0.35;
+          clone.rotation.x = item.curveZ * 0.25;
+          clone.rotation.z = -item.curveX * 0.25;
 
           while (item.group.children.length > 0) {
             item.group.remove(item.group.children[0]);
@@ -259,6 +448,7 @@ export class Archipelago {
           const clone = rockTemplate.clone();
           const s = item.size / 2.5;
           clone.scale.set(s, s, s);
+          clone.rotation.y = Math.random() * Math.PI * 2;
 
           while (item.group.children.length > 0) {
             item.group.remove(item.group.children[0]);
@@ -296,89 +486,77 @@ export class Archipelago {
   }
 
   initIslands() {
-    const matRock = new THREE.MeshStandardMaterial({
-      color: 0x3d352e, // Basalt & granite crags
-      roughness: 0.9,
+    const matIsland = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.88,
       metalness: 0.05
     });
 
-    const matGreenTurf = new THREE.MeshStandardMaterial({
-      color: 0x2e4a28, // Coastal plateau grass
-      roughness: 0.85
-    });
-
-    const matBeachSand = new THREE.MeshStandardMaterial({
-      color: 0xc8b28a, // Shoreline sand
-      roughness: 0.75
-    });
-
-    // ── ISLAND 1: LIGHTHOUSE ATOLL (Cape Horizon Island: 480m, 650m) ──
-    const mainIslandGroup = new THREE.Group();
-    mainIslandGroup.position.set(480, 0, 650);
-
-    // Rocky foundation
-    const mainRockGeo = this.createIslandGeometry(110, 42, 32);
-    const mainRock = new THREE.Mesh(mainRockGeo, matRock);
-    mainRock.position.y = 16;
-    mainRock.castShadow = true;
-    mainRock.receiveShadow = true;
-    mainIslandGroup.add(mainRock);
-
-    // Green grassy plateau top
-    const plateauGeo = new THREE.CylinderGeometry(52, 60, 4, 24);
-    const plateau = new THREE.Mesh(plateauGeo, matGreenTurf);
-    plateau.position.y = 37.5;
-    plateau.receiveShadow = true;
-    mainIslandGroup.add(plateau);
-
-    // Sandy waterline apron / beach
-    const beachGeo = new THREE.CylinderGeometry(115, 135, 3.5, 32);
-    const beach = new THREE.Mesh(beachGeo, matBeachSand);
-    beach.position.y = 0.5;
-    beach.receiveShadow = true;
-    mainIslandGroup.add(beach);
-
-    // Shoreline surf breaker foam ring
-    const surfRingGeo = new THREE.RingGeometry(112, 142, 36);
-    surfRingGeo.rotateX(-Math.PI / 2);
     const surfMat = new THREE.MeshBasicMaterial({
       color: 0xdff0fa,
       transparent: true,
       opacity: 0.65,
       side: THREE.DoubleSide
     });
+
+    // ── ISLAND 1: LIGHTHOUSE ATOLL (Cape Horizon Island: 480m, 650m) ──
+    const mainIslandGroup = new THREE.Group();
+    mainIslandGroup.position.set(480, 0, 650);
+
+    // Continuous organic mountain terrain (smooth rounded dome crest, basalt cliffs, golden sand beach)
+    const mainTerrain = this.createOrganicIslandGeometry(125, 39, 0.65, false);
+    const mainMesh = new THREE.Mesh(mainTerrain.geometry, matIsland);
+    mainMesh.castShadow = true;
+    mainMesh.receiveShadow = true;
+    mainIslandGroup.add(mainMesh);
+
+    // Shoreline surf breaker foam ring
+    const surfRingGeo = new THREE.RingGeometry(116, 142, 48);
+    surfRingGeo.rotateX(-Math.PI / 2);
     const surfRing = new THREE.Mesh(surfRingGeo, surfMat);
-    surfRing.position.y = 0.4;
+    surfRing.position.y = 0.35;
     mainIslandGroup.add(surfRing);
 
+    // Record summit apex height for lighthouse placement
+    this.lighthouseSummitY = mainTerrain.apexY;
+
     // ── FOREST & VEGETATION FOR CAPE HORIZON ISLAND ──
-    // 1. Plateau Grove (Ringed around lighthouse at radius 22m to 48m)
+    // 1. Highland Grove: Ground-anchored to the organic rounded dome crest & slopes
     const numPlateauPines = 22;
     for (let i = 0; i < numPlateauPines; i++) {
       const ang = (i / numPlateauPines) * Math.PI * 2 + (Math.sin(i * 3.7) * 0.2);
-      const rad = 24.0 + (i % 5) * 4.8;
+      const rad = 20.0 + (i % 5) * 5.2; // 20m to 40.8m from center
+      const px = Math.cos(ang) * rad;
+      const pz = Math.sin(ang) * rad;
+      const py = mainTerrain.getElevation(px, pz);
       const h = 7.5 + (i % 4) * 1.8;
       const pine = this.createPineTree(h, (Math.sin(i * 2.1) * 0.12));
-      pine.position.set(Math.cos(ang) * rad, 39.5, Math.sin(ang) * rad);
+      pine.position.set(px, py, pz);
       mainIslandGroup.add(pine);
     }
 
     const numPlateauPalms = 12;
     for (let i = 0; i < numPlateauPalms; i++) {
       const ang = (i / numPlateauPalms) * Math.PI * 2 + 0.25;
-      const rad = 34.0 + (i % 3) * 5.5;
+      const rad = 28.0 + (i % 3) * 5.5;
+      const px = Math.cos(ang) * rad;
+      const pz = Math.sin(ang) * rad;
+      const py = mainTerrain.getElevation(px, pz);
       const h = 9.5 + (i % 3) * 1.5;
       const palm = this.createPalmTree(h, Math.cos(ang) * 0.28, Math.sin(ang) * 0.28);
-      palm.position.set(Math.cos(ang) * rad, 39.5, Math.sin(ang) * rad);
+      palm.position.set(px, py, pz);
       mainIslandGroup.add(palm);
     }
 
-    // Plateau shrubs
+    // Highland shrubs
     for (let i = 0; i < 18; i++) {
       const ang = Math.random() * Math.PI * 2;
-      const rad = 22.0 + Math.random() * 26.0;
+      const rad = 18.0 + Math.random() * 26.0;
+      const px = Math.cos(ang) * rad;
+      const pz = Math.sin(ang) * rad;
+      const py = mainTerrain.getElevation(px, pz);
       const bush = this.createCoastalBush(1.8 + Math.random() * 1.2);
-      bush.position.set(Math.cos(ang) * rad, 39.5, Math.sin(ang) * rad);
+      bush.position.set(px, py, pz);
       mainIslandGroup.add(bush);
     }
 
@@ -386,134 +564,140 @@ export class Archipelago {
     const numBeachPalms = 16;
     for (let i = 0; i < numBeachPalms; i++) {
       const ang = (i / numBeachPalms) * Math.PI * 2 + 0.15;
-      const rad = 114.0 + (i % 3) * 6.5;
+      const rad = 112.0 + (i % 3) * 5.5;
+      const px = Math.cos(ang) * rad;
+      const pz = Math.sin(ang) * rad;
+      const py = mainTerrain.getElevation(px, pz);
       const h = 10.0 + (i % 4) * 1.8;
-      // Leaning towards the sea
-      const leanOutX = Math.cos(ang) * 0.42;
-      const leanOutZ = Math.sin(ang) * 0.42;
+      const leanOutX = Math.cos(ang) * 0.38;
+      const leanOutZ = Math.sin(ang) * 0.38;
       const palm = this.createPalmTree(h, leanOutX, leanOutZ);
-      palm.position.set(Math.cos(ang) * rad, 1.2, Math.sin(ang) * rad);
+      palm.position.set(px, py, pz);
       mainIslandGroup.add(palm);
     }
 
-    // Beach & Surf Boulders
+    // Coastal Breaker Rocks: Rooted in the water, half-submerged in surf
     for (let i = 0; i < 26; i++) {
       const ang = (i / 26) * Math.PI * 2 + (Math.sin(i * 1.9) * 0.3);
-      const rad = 108.0 + (i % 4) * 9.0;
-      const rockSize = 2.5 + (i % 3) * 1.8;
+      const rad = 116.0 + (i % 4) * 8.0;
+      const px = Math.cos(ang) * rad;
+      const pz = Math.sin(ang) * rad;
+      const rockSize = 2.8 + (i % 3) * 1.6;
       const boulder = this.createCoastalRock(rockSize);
-      boulder.position.set(Math.cos(ang) * rad, 1.0, Math.sin(ang) * rad);
+      boulder.position.set(px, -0.35 + (i % 3) * 0.1, pz);
       boulder.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
       mainIslandGroup.add(boulder);
     }
 
     this.scene.add(mainIslandGroup);
-    this.islands.push({ pos: mainIslandGroup.position, radius: 130, name: 'Cape Horizon Island' });
+    this.islands.push({ pos: mainIslandGroup.position, radius: 135, name: 'Cape Horizon Island' });
 
-    // ── ISLAND 2: SEA STACK ARCHIPELAGO (-520m, 380m) ──
+    // ── ISLAND 2: OFFSHORE SEA STACK ARCHIPELAGO ("THE NEEDLES" -520m, 380m) ──
+    // Pure oceanic rock formation carved by heavy seas: NO trees on sea stacks!
     const stackGroup = new THREE.Group();
     stackGroup.position.set(-520, 0, 380);
 
-    const stackGeo1 = this.createIslandGeometry(45, 32, 20);
-    const stack1 = new THREE.Mesh(stackGeo1, matRock);
-    stack1.position.y = 14;
-    stack1.castShadow = true;
-    stackGroup.add(stack1);
+    // Primary Needle Stack: sheer jagged spire with columnar basalt fluting
+    const stack1Terrain = this.createOrganicIslandGeometry(44, 38, 1.4, true);
+    const stack1Mesh = new THREE.Mesh(stack1Terrain.geometry, matIsland);
+    stack1Mesh.castShadow = true;
+    stack1Mesh.receiveShadow = true;
+    stackGroup.add(stack1Mesh);
 
-    const stackGeo2 = this.createIslandGeometry(28, 22, 16);
-    const stack2 = new THREE.Mesh(stackGeo2, matRock);
-    stack2.position.set(45, 9, -35);
-    stack2.castShadow = true;
-    stackGroup.add(stack2);
+    // Secondary Needle Spire (natural twin companion stack)
+    const stack2Terrain = this.createOrganicIslandGeometry(26, 26, 2.7, true);
+    const stack2Mesh = new THREE.Mesh(stack2Terrain.geometry, matIsland);
+    stack2Mesh.position.set(42, 0, -32);
+    stack2Mesh.castShadow = true;
+    stack2Mesh.receiveShadow = true;
+    stackGroup.add(stack2Mesh);
 
-    // Weather-beaten cliffside pines on sea stacks
-    for (let i = 0; i < 8; i++) {
-      const ang = (i / 8) * Math.PI * 2;
-      const rad = 14.0 + (i % 3) * 6.0;
-      const pine = this.createPineTree(6.5 + (i % 3) * 1.5, 0.22);
-      pine.position.set(Math.cos(ang) * rad, 28.0, Math.sin(ang) * rad);
-      stackGroup.add(pine);
-    }
+    // Tertiary Jagged Reef Rock
+    const stack3Terrain = this.createOrganicIslandGeometry(18, 17, 4.1, true);
+    const stack3Mesh = new THREE.Mesh(stack3Terrain.geometry, matIsland);
+    stack3Mesh.position.set(-36, 0, 26);
+    stack3Mesh.castShadow = true;
+    stack3Mesh.receiveShadow = true;
+    stackGroup.add(stack3Mesh);
 
-    // Jagged sea boulders around stacks
-    for (let i = 0; i < 14; i++) {
-      const ang = (i / 14) * Math.PI * 2;
-      const rad = 42.0 + (i % 3) * 8.0;
-      const boulder = this.createCoastalRock(3.0 + (i % 3) * 1.5);
-      boulder.position.set(Math.cos(ang) * rad, 0.8, Math.sin(ang) * rad);
+    // Foaming white breaker surf ring around sea stacks
+    const stackSurfGeo = new THREE.RingGeometry(38, 56, 40);
+    stackSurfGeo.rotateX(-Math.PI / 2);
+    const stackSurf = new THREE.Mesh(stackSurfGeo, surfMat);
+    stackSurf.position.y = 0.35;
+    stackGroup.add(stackSurf);
+
+    // Breaker rocks around stacks: half-submerged in the surf line
+    for (let i = 0; i < 16; i++) {
+      const ang = (i / 16) * Math.PI * 2;
+      const rad = 46.0 + (i % 3) * 7.5;
+      const boulder = this.createCoastalRock(3.0 + (i % 3) * 1.4);
+      boulder.position.set(Math.cos(ang) * rad, -0.42, Math.sin(ang) * rad);
       stackGroup.add(boulder);
     }
 
     this.scene.add(stackGroup);
-    this.islands.push({ pos: stackGroup.position, radius: 75, name: 'The Needles Sea Stacks' });
+    this.islands.push({ pos: stackGroup.position, radius: 80, name: 'The Needles Sea Stacks' });
 
     // ── ISLAND 3: EMERALD SANCTUARY ATOLL (-340m, -420m) ──
     const emeraldGroup = new THREE.Group();
     emeraldGroup.position.set(-340, 0, -420);
 
-    const emeraldRockGeo = this.createIslandGeometry(75, 26, 24);
-    const emeraldRock = new THREE.Mesh(emeraldRockGeo, matRock);
-    emeraldRock.position.y = 10;
-    emeraldRock.castShadow = true;
-    emeraldGroup.add(emeraldRock);
-
-    // Lush green tropical canopy mound
-    const emeraldTurfGeo = new THREE.CylinderGeometry(40, 52, 5, 20);
-    const emeraldTurf = new THREE.Mesh(emeraldTurfGeo, matGreenTurf);
-    emeraldTurf.position.y = 21.0;
-    emeraldTurf.receiveShadow = true;
-    emeraldGroup.add(emeraldTurf);
-
-    // White tropical sand beach apron
-    const emeraldBeachGeo = new THREE.CylinderGeometry(80, 95, 3.2, 28);
-    const emeraldBeach = new THREE.Mesh(emeraldBeachGeo, matBeachSand);
-    emeraldBeach.position.y = 0.6;
-    emeraldBeach.receiveShadow = true;
-    emeraldGroup.add(emeraldBeach);
+    const emeraldTerrain = this.createOrganicIslandGeometry(92, 26, 3.2, false);
+    const emeraldMesh = new THREE.Mesh(emeraldTerrain.geometry, matIsland);
+    emeraldMesh.castShadow = true;
+    emeraldMesh.receiveShadow = true;
+    emeraldGroup.add(emeraldMesh);
 
     // Turquoise surf foam ring
-    const emeraldSurfGeo = new THREE.RingGeometry(78, 102, 32);
+    const emeraldSurfGeo = new THREE.RingGeometry(86, 108, 36);
     emeraldSurfGeo.rotateX(-Math.PI / 2);
     const emeraldSurf = new THREE.Mesh(emeraldSurfGeo, surfMat);
-    emeraldSurf.position.y = 0.4;
+    emeraldSurf.position.y = 0.35;
     emeraldGroup.add(emeraldSurf);
 
-    // Dense tropical palm forest on Emerald Island (32 palms & pines)
+    // Dense tropical palms on Emerald Island
     for (let i = 0; i < 20; i++) {
       const ang = (i / 20) * Math.PI * 2 + (i % 3) * 0.4;
-      const rad = 12.0 + (i % 4) * 7.5;
+      const rad = 10.0 + (i % 4) * 7.0;
+      const px = Math.cos(ang) * rad;
+      const pz = Math.sin(ang) * rad;
+      const py = emeraldTerrain.getElevation(px, pz);
       const h = 8.5 + (i % 3) * 2.2;
       const palm = this.createPalmTree(h, Math.cos(ang) * 0.35, Math.sin(ang) * 0.35);
-      palm.position.set(Math.cos(ang) * rad, 23.5, Math.sin(ang) * rad);
+      palm.position.set(px, py, pz);
       emeraldGroup.add(palm);
     }
 
     for (let i = 0; i < 14; i++) {
       const ang = (i / 14) * Math.PI * 2;
-      const rad = 78.0 + (i % 3) * 5.0;
-      const palm = this.createPalmTree(10.0, Math.cos(ang) * 0.45, Math.sin(ang) * 0.45);
-      palm.position.set(Math.cos(ang) * rad, 1.2, Math.sin(ang) * rad);
+      const rad = 82.0 + (i % 3) * 4.5;
+      const px = Math.cos(ang) * rad;
+      const pz = Math.sin(ang) * rad;
+      const py = emeraldTerrain.getElevation(px, pz);
+      const palm = this.createPalmTree(10.0, Math.cos(ang) * 0.42, Math.sin(ang) * 0.42);
+      palm.position.set(px, py, pz);
       emeraldGroup.add(palm);
     }
 
-    // Coastal rocks around Emerald Atoll
+    // Coastal rocks around Emerald Atoll: half-submerged in the surf
     for (let i = 0; i < 18; i++) {
       const ang = (i / 18) * Math.PI * 2;
-      const rad = 76.0 + (i % 3) * 7.0;
+      const rad = 84.0 + (i % 3) * 6.5;
       const rock = this.createCoastalRock(2.8 + (i % 3) * 1.6);
-      rock.position.set(Math.cos(ang) * rad, 0.9, Math.sin(ang) * rad);
+      rock.position.set(Math.cos(ang) * rad, -0.35, Math.sin(ang) * rad);
       emeraldGroup.add(rock);
     }
 
     this.scene.add(emeraldGroup);
-    this.islands.push({ pos: emeraldGroup.position, radius: 95, name: 'Emerald Sanctuary Atoll' });
+    this.islands.push({ pos: emeraldGroup.position, radius: 105, name: 'Emerald Sanctuary Atoll' });
   }
 
   // ── 2. HISTORIC COASTAL LIGHTHOUSE WITH ROTATING FRESNEL BEAM ──
   initLighthouse() {
     const group = new THREE.Group();
-    // Placed on Cape Horizon Island plateau
-    group.position.set(480, 39.5, 650);
+    // Placed on Cape Horizon Island summit crest
+    group.position.set(480, this.lighthouseSummitY !== undefined ? this.lighthouseSummitY : 39.0, 650);
 
     const matWhiteStone = new THREE.MeshStandardMaterial({
       color: 0xf4f6f8,
@@ -531,6 +715,41 @@ export class Archipelago {
       metalness: 0.7
     });
 
+    // Procedural fallback tower group
+    const proceduralTower = new THREE.Group();
+    group.add(proceduralTower);
+
+    // Load ultra-detailed Blender historic coastal lighthouse
+    const lLoader = new GLTFLoader();
+    lLoader.load(
+      'assets/models/lighthouse.glb',
+      (gltf) => {
+        const lModel = gltf.scene;
+        lModel.name = 'Blender_Lighthouse';
+        lModel.traverse((c) => {
+          if (c.isMesh) {
+            c.castShadow = true;
+            c.receiveShadow = true;
+            if (c.name.includes('Glass') || c.material?.name?.includes('Glass')) {
+              c.material = new THREE.MeshPhysicalMaterial({
+                color: 0xdaeffa,
+                transparent: true,
+                opacity: 0.22,
+                roughness: 0.05,
+                transmission: 0.95,
+                depthWrite: false
+              });
+            }
+          }
+        });
+        proceduralTower.visible = false;
+        group.add(lModel);
+        console.log('Nautilus 3D: Ultra-realistic Blender historic lighthouse model loaded.');
+      },
+      undefined,
+      (err) => console.warn('Nautilus 3D: Lighthouse GLB loading fallback to procedural:', err)
+    );
+
     // Octagonal masonry foundation base
     const base = new THREE.Mesh(
       new THREE.CylinderGeometry(5.2, 5.8, 3.5, 8),
@@ -538,7 +757,7 @@ export class Archipelago {
     );
     base.position.y = 1.75;
     base.castShadow = true;
-    group.add(base);
+    proceduralTower.add(base);
 
     // Tapering cylindrical tower with alternating red & white horizontal bands (24m tall)
     const bandHeight = 4.2;
@@ -553,7 +772,7 @@ export class Archipelago {
       );
       section.position.y = 3.5 + b * bandHeight + bandHeight / 2;
       section.castShadow = true;
-      group.add(section);
+      proceduralTower.add(section);
     }
 
     // Gallery Balcony & Railing
@@ -563,7 +782,7 @@ export class Archipelago {
       matLanternBlack
     );
     gallery.position.y = galleryY + 0.3;
-    group.add(gallery);
+    proceduralTower.add(gallery);
 
     // Glass Lantern Room
     const lanternGlass = new THREE.Mesh(
@@ -577,7 +796,7 @@ export class Archipelago {
       })
     );
     lanternGlass.position.y = galleryY + 2.4;
-    group.add(lanternGlass);
+    proceduralTower.add(lanternGlass);
 
     // Dome Roof & Lightning Rod
     const domeRoof = new THREE.Mesh(
@@ -585,14 +804,14 @@ export class Archipelago {
       matLanternBlack
     );
     domeRoof.position.y = galleryY + 4.2;
-    group.add(domeRoof);
+    proceduralTower.add(domeRoof);
 
     const rod = new THREE.Mesh(
       new THREE.CylinderGeometry(0.06, 0.08, 4.5),
       matLanternBlack
     );
     rod.position.y = galleryY + 7.5;
-    group.add(rod);
+    proceduralTower.add(rod);
 
     // Glowing Fresnel Lantern Core
     // ── GLOWING FRESNEL LANTERN CORE ──
@@ -604,12 +823,13 @@ export class Archipelago {
       new THREE.MeshBasicMaterial({ color: 0xfff8eb })
     );
     fresnelCore.position.y = lanternY;
-    group.add(fresnelCore);
+    proceduralTower.add(fresnelCore);
 
     // High-power omnidirectional lantern light (illuminates tower & stormy sea around island)
     const lanternPoint = new THREE.PointLight(0xffe290, 8.5, 280, 1.0);
     lanternPoint.position.y = lanternY;
     group.add(lanternPoint);
+    this.lanternPoint = lanternPoint;
 
     // ── ROTATING DUAL VOLUMETRIC EXPANDING FRESNEL LIGHT BEAMS ──
     const beamPivot = new THREE.Group();
@@ -626,7 +846,7 @@ export class Archipelago {
     // 1. Naturally EXPANDS outward from lantern aperture across the entire ocean
     // 2. Continuous solid optical density with Gaussian falloff (no hollow shell)
     // 3. Gentle Beer-Lambert atmospheric attenuation with smooth end feathering
-    // 4. Dynamic storm boost: dramatically cuts through tempest rain and dark clouds
+    // 4. Dynamic daylight dimming: in full daylight, beam fades to subtle atmospheric wisp (NO solid white daylight laser beam!)
     const createBeamMaterial = (opacityVal, coreConcentration) => {
       const mat = new THREE.ShaderMaterial({
         transparent: true,
@@ -718,6 +938,7 @@ export class Archipelago {
           }
         `
       });
+      mat.baseOpacity = opacityVal;
       this.beamMaterials.push(mat);
       return mat;
     };
@@ -827,16 +1048,54 @@ export class Archipelago {
       this.lighthouseTower.rotation.y += 0.72 * dt;
     }
 
-    // Dynamic storm & darkness volumetric boost: in tempest / night, light scatters more solidly through mist
+    // Dynamic daylight / twilight / night / storm adaptive illumination:
+    // In daylight (Clear Sunrise, Sunny Noon, Overcast), the beam is faint (0.015 opacity) so it doesn't blast like a laser across the blue sky.
+    // In dark tempest, twilight sunset, or starry night, it cuts powerfully through the mist!
     if (this.beamMaterials && this.beamMaterials.length > 0) {
-      const isStorm = weatherPreset && weatherPreset.id === 'storm';
-      const isNight = weatherPreset && (weatherPreset.id === 'aurora' || weatherPreset.id === 'sunset');
-      const targetBoost = isStorm ? 1.65 : (isNight ? 1.35 : 1.0);
+      const sunY = (weatherPreset && weatherPreset.sunPosition) ? weatherPreset.sunPosition[1] : 160;
+      const isStorm = weatherPreset && (weatherPreset.id === 'storm' || weatherPreset.rain);
+      const isNight = weatherPreset && (weatherPreset.id === 'aurora');
+      const isSunset = weatherPreset && (weatherPreset.id === 'sunset');
+
+      let visibilityFactor = 0.015; // Natural faint daylight shimmer
+      if (isStorm) {
+        visibilityFactor = 1.0;
+      } else if (isNight || sunY < 15) {
+        visibilityFactor = 0.85;
+      } else if (isSunset || (sunY >= 15 && sunY < 55)) {
+        const t = (55 - sunY) / 40.0;
+        visibilityFactor = 0.015 + t * 0.50;
+      }
 
       for (const mat of this.beamMaterials) {
-        if (mat.uniforms && mat.uniforms.uStormBoost) {
-          mat.uniforms.uStormBoost.value = THREE.MathUtils.lerp(mat.uniforms.uStormBoost.value, targetBoost, Math.min(1.0, 4.0 * dt));
+        if (mat.uniforms && mat.uniforms.uOpacity) {
+          const targetOpacity = mat.baseOpacity * visibilityFactor;
+          mat.uniforms.uOpacity.value = THREE.MathUtils.lerp(
+            mat.uniforms.uOpacity.value,
+            targetOpacity,
+            Math.min(1.0, 5.0 * dt)
+          );
         }
+        if (mat.uniforms && mat.uniforms.uStormBoost) {
+          const targetBoost = isStorm ? 1.65 : (isNight ? 1.35 : 1.0);
+          mat.uniforms.uStormBoost.value = THREE.MathUtils.lerp(
+            mat.uniforms.uStormBoost.value,
+            targetBoost,
+            Math.min(1.0, 4.0 * dt)
+          );
+        }
+      }
+
+      // Spotlight wave sweep adjustment
+      for (const spot of this.lighthouseBeams) {
+        const targetIntensity = isStorm ? 28.0 : (isNight || sunY < 15 ? 22.0 : (visibilityFactor > 0.1 ? 6.0 : 0.0));
+        spot.intensity = THREE.MathUtils.lerp(spot.intensity, targetIntensity, Math.min(1.0, 5.0 * dt));
+      }
+
+      // Lantern point light
+      if (this.lanternPoint) {
+        const targetPoint = isStorm ? 12.0 : (isNight || sunY < 15 ? 9.5 : (visibilityFactor > 0.1 ? 4.0 : 1.5));
+        this.lanternPoint.intensity = THREE.MathUtils.lerp(this.lanternPoint.intensity, targetPoint, Math.min(1.0, 5.0 * dt));
       }
     }
   }
