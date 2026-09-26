@@ -423,7 +423,7 @@ class App {
 
     // 7. Update Wildlife, AI Traffic, Islands, Buoys, Seagulls, and Clouds
     this.wildlife.update(dt, this.time, this.ship.group.position, this.ship.group.quaternion, this.physics.speedKnots, this.islands, this.traffic, this.buoys);
-    this.traffic.update(dt, this.time, this.ship.group.position, this.islands, this.physics);
+    this.traffic.update(dt, this.time, this.ship.group.position, this.islands, this.physics, this.audio);
     this.islands.update(dt, this.weather ? this.weather.currentPreset : null);
     this.buoys.update(dt, this.time, this.weather.currentPreset.waveScale, this.ship.group.position);
     this.seagulls.update(dt, this.time, this.ship.group.position, this.ship.group.quaternion, this.physics.speedKnots);

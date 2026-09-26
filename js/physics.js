@@ -355,57 +355,120 @@ export class ShipPhysics {
       v.pos.x -= nx * minOverlap * aiWeight * 1.05;
       v.pos.z -= nz * minOverlap * aiWeight * 1.05;
 
-      // 2. Relative Velocities & Momentum Impulse
+      // 2. Exact Contact Points on Both Hulls (Relative to centers of mass)
+      // Vector from player center to AI center projected onto player's local axes
+      const toAiX = v.pos.x - this.position.x;
+      const toAiZ = v.pos.z - this.position.z;
+      const localZ = toAiX * a1.x + toAiZ * a1.z; // Bow (+) / Stern (-)
+      const localX = toAiX * a2.x + toAiZ * a2.z; // Starboard (+) / Port (-)
+      const cpLocalZ = THREE.MathUtils.clamp(localZ, -playerHalfL, playerHalfL);
+      const cpLocalX = THREE.MathUtils.clamp(localX, -playerHalfW, playerHalfW);
+      const rx = a1.x * cpLocalZ + a2.x * cpLocalX;
+      const rz = a1.z * cpLocalZ + a2.z * cpLocalX;
+
+      // Vector from AI center to player center projected onto AI's local axes
+      const toPlayerX = this.position.x - v.pos.x;
+      const toPlayerZ = this.position.z - v.pos.z;
+      const aiLocalZ = toPlayerX * b1.x + toPlayerZ * b1.z;
+      const aiLocalX = toPlayerX * b2.x + toPlayerZ * b2.z;
+      const aiCpLocalZ = THREE.MathUtils.clamp(aiLocalZ, -aiHalfL, aiHalfL);
+      const aiCpLocalX = THREE.MathUtils.clamp(aiLocalX, -aiHalfW, aiHalfW);
+      const aiRx = b1.x * aiCpLocalZ + b2.x * aiCpLocalX;
+      const aiRz = b1.z * aiCpLocalZ + b2.z * aiCpLocalX;
+
+      // 3. Velocities at Contact Points
       const aiSpeedMps = (v.speed || 0) * 0.514444;
-      const aiVelX = Math.sin(aiHead) * aiSpeedMps;
-      const aiVelZ = Math.cos(aiHead) * aiSpeedMps;
+      const aiVelX = Math.sin(aiHead) * aiSpeedMps + (v.driftVel ? v.driftVel.x : 0);
+      const aiVelZ = Math.cos(aiHead) * aiSpeedMps + (v.driftVel ? v.driftVel.z : 0);
+      const aiOmega = v.impactAngularVel || 0;
 
-      // Relative collision point on player hull
-      const rx = -nx * Math.min(playerHalfL, playerHalfW * 1.6);
-      const rz = -nz * Math.min(playerHalfL, playerHalfW * 1.6);
+      const ptVelPlayerX = this.linearVelocity.x - this.angularVelocity.y * rz;
+      const ptVelPlayerZ = this.linearVelocity.z + this.angularVelocity.y * rx;
+      const ptVelAiX = aiVelX - aiOmega * aiRz;
+      const ptVelAiZ = aiVelZ + aiOmega * aiRx;
 
-      const ptVelX = this.linearVelocity.x - this.angularVelocity.y * rz;
-      const ptVelZ = this.linearVelocity.z + this.angularVelocity.y * rx;
-      const vRelX = ptVelX - aiVelX;
-      const vRelZ = ptVelZ - aiVelZ;
-
+      const vRelX = ptVelPlayerX - ptVelAiX;
+      const vRelZ = ptVelPlayerZ - ptVelAiZ;
       const normRelVel = vRelX * nx + vRelZ * nz;
 
-      if (normRelVel < 0) {
-        const restitution = 0.35;
-        const rCrossN = rx * nz - rz * nx;
-        const effMassInv = (1.0 / playerMass) + (1.0 / aiMass) + (rCrossN * rCrossN) / playerI;
-        const impulseMag = -(1.0 + restitution) * normRelVel / effMassInv;
+      // 4. Moment Arms: r x n (2D cross product rx * nz - rz * nx)
+      const rCrossN_player = rx * nz - rz * nx;
+      // Normal acting on AI vessel is -n
+      const rCrossN_ai = aiRx * (-nz) - aiRz * (-nx);
 
-        // Apply linear rebound to player
+      // Contact spring impulse for persistent overlap penetration
+      const penImpulse = minOverlap * 4500.0 * Math.min(1.0, totalMass / 40000.0);
+      let impulseMag = 0;
+
+      if (normRelVel < 0) {
+        const restitution = 0.45;
+        const effMassInv = (1.0 / playerMass) + (1.0 / aiMass) +
+                           (rCrossN_player * rCrossN_player) / playerI +
+                           (rCrossN_ai * rCrossN_ai) / aiI;
+        impulseMag = -(1.0 + restitution) * normRelVel / effMassInv + penImpulse;
+      } else if (minOverlap > 0.05) {
+        impulseMag = penImpulse;
+      }
+
+      if (impulseMag > 150.0) {
+        // ── A. LINEAR IMPULSE TO PLAYER (Directional deflection away from contact normal) ──
         this.linearVelocity.x += (nx * impulseMag) / playerMass;
         this.linearVelocity.z += (nz * impulseMag) / playerMass;
 
-        // Apply yaw torque to player
-        this.angularVelocity.y += (rCrossN * impulseMag) / playerI;
+        // Recalculate forward speed immediately
+        const fwdSpeedMps = this.linearVelocity.x * a1.x + this.linearVelocity.z * a1.z;
+        this.speedKnots = fwdSpeedMps * 1.94384;
 
-        // Dynamic impact roll tilt (boat heels outward violently from collision)
-        this.angularVelocity.z += (Math.random() - 0.5) * Math.min(1.4, impulseMag / 35000.0);
+        // ── B. ROTATIONAL YAW TORQUE (Pivots ship away from where it was struck) ──
+        // Hitting bow pushes bow away; hitting stern pushes stern away
+        const torqueYaw = (rCrossN_player * impulseMag) / playerI;
+        this.angularVelocity.y += THREE.MathUtils.clamp(torqueYaw, -2.4, 2.4);
 
-        // Hull friction scrub along tangent
+        // ── C. ROLL HEELING SHOCK (Ship heels violently into water along longitudinal forward axis) ──
+        const lateralImpact = nx * a2.x + nz * a2.z; // Lateral component against starboard beam
+        const rollKick = -lateralImpact * Math.min(2.2, impulseMag / (playerMass * 1.4));
+        this.angularVelocity.x += pFwd.x * rollKick;
+        this.angularVelocity.z += pFwd.z * rollKick;
+
+        // ── D. TANGENTIAL HULL FRICTION SCRUB ──
         const tx = -nz;
         const tz = nx;
         const tangRelVel = vRelX * tx + vRelZ * tz;
-        const frictionImpulse = -tangRelVel * 0.4 * Math.min(1.0, impulseMag / 15000.0);
+        const frictionImpulse = -tangRelVel * 0.45 * Math.min(1.0, impulseMag / 15000.0);
         this.linearVelocity.x += tx * frictionImpulse;
         this.linearVelocity.z += tz * frictionImpulse;
 
-        // Deflect AI vessel
-        if (v.speed) v.speed = Math.max(1.5, v.speed * 0.8);
-        v.heading += (rCrossN > 0 ? 0.05 : -0.05);
+        // ── E. PHYSICAL REACTION ON AI VESSEL ──
+        if (!v.driftVel) v.driftVel = { x: 0, z: 0 };
+        v.driftVel.x -= (nx * impulseMag) / aiMass;
+        v.driftVel.z -= (nz * impulseMag) / aiMass;
 
-        // Sound effect
-        if (audio) {
-          audio.playWaveImpact(Math.min(3.5, 1.2 + Math.abs(normRelVel) * 0.5));
+        if (v.impactAngularVel !== undefined) {
+          const aiYawTorque = (rCrossN_ai * impulseMag) / aiI;
+          v.impactAngularVel += THREE.MathUtils.clamp(aiYawTorque, -0.9, 0.9);
         }
 
-        this.collisionAlert = `COLLISION: Hull impact with ${v.name}!`;
-        this.collisionTimer = 2.5;
+        // AI vessel rolls from impact
+        if (v.rollVelocity !== undefined) {
+          const aiLateralImpact = (-nx) * b2.x + (-nz) * b2.z;
+          v.rollVelocity -= THREE.MathUtils.clamp(aiLateralImpact * (impulseMag / (aiMass * 0.08)), -1.2, 1.2);
+        }
+
+        // Sudden reduction in AI forward speed & emergency astern throttle
+        v.speed = Math.max(-2.5, v.speed - (impulseMag / (aiMass * 0.45)));
+        v.targetSpeed = -2.5; // Back propellers away from collision
+        v.evading = true;
+        v.evasionTimer = 6.0;
+
+        // ── F. AUDIO & COLLISION ALERTS ──
+        if (audio) {
+          const intensity = Math.min(2.5, 0.8 + impulseMag / 35000.0);
+          audio.playHeavyImpact(intensity);
+        }
+
+        const forceKn = (impulseMag / 1000.0).toFixed(0);
+        this.collisionAlert = `COLLISION: Impact with ${v.name}! Force: ${forceKn} kN`;
+        this.collisionTimer = 3.0;
       }
     }
   }

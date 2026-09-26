@@ -283,6 +283,91 @@ export class OceanAudio {
     src.start(t);
   }
 
+  // COLREGs Rule 34(d): 5 short, rapid blasts on ship's whistle indicating doubt / immediate danger
+  playDangerHorn(distanceMeters = 80) {
+    if (!this.started || this.isMuted) return;
+
+    const t = this.ctx.currentTime;
+    const distFactor = THREE.MathUtils.clamp(1.0 - (distanceMeters / 600.0), 0.35, 1.0);
+    const blastDuration = 0.22;
+    const interval = 0.38;
+
+    for (let i = 0; i < 5; i++) {
+      const startTime = t + i * interval;
+      const hornGain = this.ctx.createGain();
+      hornGain.gain.setValueAtTime(0.0, startTime);
+      hornGain.gain.linearRampToValueAtTime(0.42 * distFactor, startTime + 0.04);
+      hornGain.gain.setValueAtTime(0.42 * distFactor, startTime + blastDuration - 0.04);
+      hornGain.gain.exponentialRampToValueAtTime(0.001, startTime + blastDuration);
+
+      const freqs = [115.0, 155.0, 230.0];
+      freqs.forEach(f => {
+        const osc = this.ctx.createOscillator();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(f, startTime);
+
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(380 * distFactor + 180, startTime);
+
+        osc.connect(filter);
+        filter.connect(hornGain);
+        osc.start(startTime);
+        osc.stop(startTime + blastDuration + 0.02);
+      });
+
+      hornGain.connect(this.masterGain);
+    }
+  }
+
+  // Heavy Ship-to-Ship Hull Impact / Metallic Collision Crunch
+  playHeavyImpact(intensity = 1.0) {
+    if (!this.started || this.isMuted) return;
+
+    const t = this.ctx.currentTime;
+    const gain = this.ctx.createGain();
+    const vol = Math.min(0.65 * intensity, 0.85);
+    gain.gain.setValueAtTime(vol, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 1.8);
+
+    // Deep sub-bass thud (hull displacement shockwave)
+    const subOsc = this.ctx.createOscillator();
+    subOsc.type = 'sine';
+    subOsc.frequency.setValueAtTime(85, t);
+    subOsc.frequency.exponentialRampToValueAtTime(25, t + 0.8);
+
+    const subGain = this.ctx.createGain();
+    subGain.gain.setValueAtTime(vol * 0.9, t);
+    subGain.gain.exponentialRampToValueAtTime(0.001, t + 0.8);
+
+    subOsc.connect(subGain);
+    subGain.connect(this.masterGain);
+    subOsc.start(t);
+    subOsc.stop(t + 0.85);
+
+    // Crushing metal & water slap noise
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(320, t);
+    filter.frequency.exponentialRampToValueAtTime(90, t + 1.6);
+    filter.Q.setValueAtTime(2.0, t);
+
+    const bufferSize = Math.floor(this.ctx.sampleRate * 1.6);
+    const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+    const output = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      output[i] = (Math.random() * 2 - 1) * Math.exp(-i / (this.ctx.sampleRate * 0.35));
+    }
+
+    const src = this.ctx.createBufferSource();
+    src.buffer = noiseBuffer;
+
+    src.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.masterGain);
+    src.start(t);
+  }
+
   toggleMute() {
     if (!this.started) {
       this.init();

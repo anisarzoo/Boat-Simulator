@@ -486,12 +486,23 @@ export class MarineTraffic {
         group: container,
         pos: new THREE.Vector3(320, 0, 220),
         heading: 2.15, // Heading SW along deep-water passage
+        originalHeading: 2.15,
         speed: 14.5,   // Knots
+        baseSpeed: 14.5,
+        targetSpeed: 14.5,
         length: 110,
         beam: 19.0,
         mass: 45000000,
         turnRate: 0.28,
-        hornCooldown: 0
+        hornCooldown: 0,
+        dangerHornCooldown: 0,
+        evading: false,
+        evasionTimer: 0,
+        evasionDir: 1,
+        impactAngularVel: 0,
+        rollAngle: 0,
+        rollVelocity: 0,
+        driftVel: { x: 0, z: 0 }
       },
       {
         name: 'FV NORTHERN SEAS',
@@ -499,12 +510,23 @@ export class MarineTraffic {
         group: trawler,
         pos: new THREE.Vector3(-240, 0, 140),
         heading: 0.75, // Heading NE
+        originalHeading: 0.75,
         speed: 9.5,
+        baseSpeed: 9.5,
+        targetSpeed: 9.5,
         length: 26,
         beam: 7.5,
         mass: 220000,
         turnRate: 0.65,
-        hornCooldown: 0
+        hornCooldown: 0,
+        dangerHornCooldown: 0,
+        evading: false,
+        evasionTimer: 0,
+        evasionDir: 1,
+        impactAngularVel: 0,
+        rollAngle: 0,
+        rollVelocity: 0,
+        driftVel: { x: 0, z: 0 }
       },
       {
         name: 'SY AURA OCEANIS',
@@ -512,12 +534,23 @@ export class MarineTraffic {
         group: sailboat,
         pos: new THREE.Vector3(140, 0, -240),
         heading: -2.3, // Heading NW
+        originalHeading: -2.3,
         speed: 12.0,
+        baseSpeed: 12.0,
+        targetSpeed: 12.0,
         length: 20,
         beam: 5.0,
         mass: 35000,
         turnRate: 0.85,
-        hornCooldown: 0
+        hornCooldown: 0,
+        dangerHornCooldown: 0,
+        evading: false,
+        evasionTimer: 0,
+        evasionDir: 1,
+        impactAngularVel: 0,
+        rollAngle: 0.22,
+        rollVelocity: 0,
+        driftVel: { x: 0, z: 0 }
       }
     ];
 
@@ -684,7 +717,7 @@ export class MarineTraffic {
     return null;
   }
 
-  update(dt, time, shipPosition, archipelago = null, playerPhysics = null) {
+  update(dt, time, shipPosition, archipelago = null, playerPhysics = null, audio = null) {
     // 1. AI-to-AI vessel separation & collision avoidance
     for (let i = 0; i < this.vessels.length; i++) {
       for (let j = i + 1; j < this.vessels.length; j++) {
@@ -714,11 +747,33 @@ export class MarineTraffic {
       }
     }
 
-    // 2. Individual Vessel Navigation, Island Avoidance & Hydrodynamics
+    // 2. Individual Vessel Navigation, Island Avoidance, Evasion & Hydrodynamics
     for (const v of this.vessels) {
       v.hornCooldown -= dt;
+      if (v.dangerHornCooldown !== undefined) v.dangerHornCooldown -= dt;
+
+      // ── Collision Impulse Decay & Physical Reaction ──
+      if (v.impactAngularVel) {
+        v.heading += v.impactAngularVel * dt;
+        v.impactAngularVel *= Math.exp(-2.2 * dt);
+      }
+      if (v.driftVel) {
+        v.pos.x += v.driftVel.x * dt;
+        v.pos.z += v.driftVel.z * dt;
+        v.driftVel.x *= Math.exp(-2.0 * dt);
+        v.driftVel.z *= Math.exp(-2.0 * dt);
+      }
+
+      // Restoring roll spring-damper (righting moment to upright or sailboat heel)
+      const targetRoll = (v.type === 'Sailing Yacht' ? 0.22 : 0.0);
+      const rollSpring = 12.0;
+      const rollDamp = 3.2;
+      const rollAccel = -rollSpring * (v.rollAngle - targetRoll) - rollDamp * v.rollVelocity;
+      v.rollVelocity += rollAccel * dt;
+      v.rollAngle += v.rollVelocity * dt;
 
       // ── A. Island Obstacle Avoidance & Hard Reef Barrier ──
+      let avoidingIsland = false;
       if (archipelago && archipelago.islands) {
         for (const isle of archipelago.islands) {
           const toIsleX = isle.pos.x - v.pos.x;
@@ -730,7 +785,7 @@ export class MarineTraffic {
           const fwdX = Math.sin(v.heading);
           const fwdZ = Math.cos(v.heading);
           const proj = toIsleX * fwdX + toIsleZ * fwdZ;
-          const lookahead = Math.max(v.length * 1.8, (v.speed * 0.514444) * 16.0);
+          const lookahead = Math.max(v.length * 1.8, (Math.abs(v.speed) * 0.514444) * 16.0);
 
           if (proj > 0 && proj < lookahead + safeRadius) {
             const perpSq = dToIsle * dToIsle - proj * proj;
@@ -741,6 +796,8 @@ export class MarineTraffic {
               const urgency = 1.0 - Math.min(1.0, proj / (lookahead + safeRadius));
               const steerAmt = steerDir * v.turnRate * (urgency * 1.8 + 0.4);
               v.heading += steerAmt * dt;
+              avoidingIsland = true;
+              v.targetSpeed = THREE.MathUtils.lerp(v.targetSpeed, v.baseSpeed * 0.7, 0.5 * dt);
             }
           }
 
@@ -755,30 +812,90 @@ export class MarineTraffic {
             // Turn heading smoothly outward toward open sea
             const outwardAngle = Math.atan2(nx, nz);
             v.heading = THREE.MathUtils.lerp(v.heading, outwardAngle, Math.min(1.0, 3.5 * dt));
+            avoidingIsland = true;
           }
         }
       }
 
-      // ── B. Player Vessel Collision Avoidance Steering ──
-      if (playerPhysics && playerPhysics.position) {
+      // ── B. Player Path Blocking Detection & COLREGs Evasion Maneuver ──
+      if (!avoidingIsland && playerPhysics && playerPhysics.position) {
         const toPlayerX = playerPhysics.position.x - v.pos.x;
         const toPlayerZ = playerPhysics.position.z - v.pos.z;
         const distToPlayer = Math.hypot(toPlayerX, toPlayerZ);
+
+        // Vessel heading unit vectors (forward & starboard)
         const fwdX = Math.sin(v.heading);
         const fwdZ = Math.cos(v.heading);
-        const projPlayer = toPlayerX * fwdX + toPlayerZ * fwdZ;
+        const rightX = Math.cos(v.heading);
+        const rightZ = -Math.sin(v.heading);
 
-        if (projPlayer > 0 && projPlayer < v.length * 1.2 + 30.0 && distToPlayer < v.length + 35.0) {
-          // Player directly ahead in shipping channel: sound horn warning and steer
-          if (v.hornCooldown <= 0) {
-            v.hornCooldown = 12.0;
+        // Decompose player relative position into along-track (forward) and cross-track (lateral)
+        const forwardDist = toPlayerX * fwdX + toPlayerZ * fwdZ;
+        const lateralDist = toPlayerX * rightX + toPlayerZ * rightZ;
+
+        // Dynamic forward detection corridor based on ship speed and stopping distance
+        const lookaheadDist = Math.max(v.length * 2.4, Math.abs(v.speed) * 0.514444 * 18.0 + 35.0);
+        const corridorHalfW = v.beam * 1.8 + 12.0;
+
+        const isPathBlocked = (forwardDist > -v.length * 0.35 && forwardDist < lookaheadDist && Math.abs(lateralDist) < corridorHalfW);
+
+        if (isPathBlocked) {
+          v.evading = true;
+          v.evasionTimer = 6.0; // Maintain evasive heading until clear
+
+          // COLREGs Rule 14 (Head-on & Crossing):
+          // If player is dead ahead or on port bow, alter course to starboard (+1).
+          // If player is clearly on starboard bow, alter course to port (-1).
+          const steerDir = (lateralDist >= 2.0) ? -1.0 : 1.0;
+          v.evasionDir = steerDir;
+
+          const urgency = 1.0 - Math.min(1.0, Math.max(0, forwardDist) / lookaheadDist);
+          const steerRate = v.turnRate * (1.2 + urgency * 1.8);
+          v.heading += steerDir * steerRate * dt;
+
+          // Realistic turning heel (centrifugal roll)
+          v.rollVelocity -= steerDir * 0.4 * urgency * dt;
+
+          // Speed management & emergency astern stopping
+          if (forwardDist < v.length * 1.05 + 20.0) {
+            // CRITICAL PROXIMITY: Player is blocking right ahead!
+            // Emergency Full Astern (reverse propellers to prevent running over player)
+            v.targetSpeed = -2.5;
+
+            // Sound COLREGs Rule 34(d) 5 rapid short danger horn blasts
+            if (audio && v.dangerHornCooldown <= 0) {
+              audio.playDangerHorn(distToPlayer);
+              v.dangerHornCooldown = 10.0;
+            }
+          } else if (forwardDist < lookaheadDist * 0.5) {
+            // Dead slow ahead
+            v.targetSpeed = Math.max(2.0, v.baseSpeed * 0.25);
+          } else {
+            // Half speed ahead
+            v.targetSpeed = v.baseSpeed * 0.6;
           }
-          const crossPlayer = fwdX * toPlayerZ - fwdZ * toPlayerX;
-          v.heading += (crossPlayer > 0 ? -0.4 : 0.4) * dt;
+        } else if (v.evading) {
+          v.evasionTimer -= dt;
+          if (v.evasionTimer <= 0) {
+            v.evading = false;
+            v.targetSpeed = v.baseSpeed;
+          } else {
+            // Hold course clear of player's vessel
+            v.heading += v.evasionDir * v.turnRate * 0.45 * dt;
+            v.targetSpeed = THREE.MathUtils.lerp(v.targetSpeed, v.baseSpeed * 0.85, 0.6 * dt);
+          }
+        } else {
+          // Clear fairway: smoothly restore route heading toward original track
+          const headingDiff = Math.atan2(Math.sin(v.originalHeading - v.heading), Math.cos(v.originalHeading - v.heading));
+          v.heading += headingDiff * Math.min(1.0, 0.18 * dt);
+          v.targetSpeed = v.baseSpeed;
         }
       }
 
-      // ── C. Cruising Forward Locomotion ──
+      // ── C. Engine Inertia & Cruising Forward Locomotion ──
+      const inertiaRate = (v.length > 50) ? 0.35 : 0.85;
+      v.speed = THREE.MathUtils.lerp(v.speed, v.targetSpeed, Math.min(1.0, inertiaRate * dt));
+
       const speedMps = v.speed * 0.514444; // Knots to m/s
       v.pos.x += Math.sin(v.heading) * speedMps * dt;
       v.pos.z += Math.cos(v.heading) * speedMps * dt;
@@ -815,7 +932,7 @@ export class MarineTraffic {
       }
 
       v.group.position.copy(v.pos);
-      v.group.rotation.set(pitch, v.heading, v.type === 'Sailing Yacht' ? 0.22 : 0);
+      v.group.rotation.set(pitch, v.heading, v.rollAngle);
     }
   }
 
