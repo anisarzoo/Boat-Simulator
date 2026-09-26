@@ -1,8 +1,12 @@
 // Shared Gerstner Wave math for both CPU physics and GPU GLSL shaders
 import { BASE_WAVES, GRAVITY } from './constants.js';
 
-// Precompute wave parameters
+// Precompute wave parameters with smooth trochoidal crest curvature (strictly zero cusping)
 export function computeWaveSpecs(baseWaves = BASE_WAVES, scale = 1.0) {
+  // Safe combined sharpness ceiling: 0.52 guarantees waves remain smooth, rounded, and natural
+  const maxCombinedSharpness = 0.52;
+  const rawTotalSteepness = baseWaves.reduce((sum, w) => sum + w.steepness, 0);
+
   return baseWaves.map(w => {
     const len = Math.hypot(w.dir[0], w.dir[1]) || 1;
     const dx = w.dir[0] / len;
@@ -10,8 +14,16 @@ export function computeWaveSpecs(baseWaves = BASE_WAVES, scale = 1.0) {
     const wavelength = w.wavelength;
     const k = (2 * Math.PI) / wavelength;
     const wFreq = Math.sqrt(GRAVITY * k) * w.speed;
-    const amplitude = (wavelength * 0.05) * (w.steepness * 2.8) * scale;
-    const q = w.steepness / (k * amplitude * baseWaves.length + 0.0001);
+
+    // Amplitude scaled proportionally with weather wave scale
+    // Natural dispersion: longer rolling swells carry proportional harmonic energy
+    const waveEnergyFactor = Math.sqrt(wavelength / 48.0);
+    const amplitude = (wavelength * 0.036) * (w.steepness * 2.2) * waveEnergyFactor * scale;
+
+    // Gerstner Q parameter: strictly bounded so sum of (Q * k * A) <= maxCombinedSharpness
+    const waveShare = w.steepness / rawTotalSteepness;
+    const targetQkA = waveShare * maxCombinedSharpness;
+    const q = targetQkA / (k * Math.max(amplitude, 0.0001));
 
     return {
       dx,
@@ -19,7 +31,7 @@ export function computeWaveSpecs(baseWaves = BASE_WAVES, scale = 1.0) {
       k,
       wFreq,
       amplitude,
-      q: Math.min(q, 0.45) // prevent self-intersection of wave crests
+      q: Math.min(q, 0.32) // Strict ceiling ensures crests are always smooth and rounded
     };
   });
 }
@@ -33,7 +45,7 @@ export function sampleOcean(x, z, time, waveScale = 1.0) {
 
   let normX = 0;
   let normZ = 0;
-  let normY = 1;
+  let normY = 1.0;
 
   for (let i = 0; i < waves.length; i++) {
     const w = waves[i];
@@ -52,6 +64,7 @@ export function sampleOcean(x, z, time, waveScale = 1.0) {
     normY -= w.q * kA * sinP;
   }
 
+  normY = Math.max(0.35, normY); // Never allow horizontal or inverted normals
   const nLen = Math.hypot(normX, normY, normZ) || 1;
 
   return {
@@ -104,11 +117,12 @@ export function getGerstnerGLSL() {
         n.y -= w.q * kA * sinP;
 
         // Measure steepness/cresting for dynamic white foam
-        totalCrest += sinP * (kA * 1.5);
+        totalCrest += sinP * (kA * 1.2);
       }
 
+      n.y = max(0.35, n.y); // Strictly prevent inverted, horizontal, or cusp normals
       normal = normalize(n);
-      crestFactor = clamp(totalCrest * 0.45, 0.0, 1.0);
+      crestFactor = clamp(totalCrest * 0.40, 0.0, 1.0);
     }
   `;
 }

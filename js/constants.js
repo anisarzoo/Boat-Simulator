@@ -4,22 +4,22 @@ export const GRAVITY = 9.81;
 
 // Realistic multi-octave ocean swell & wind-sea spectrum (JONSWAP / Phillips inspired)
 export const BASE_WAVES = [
-  // Primary oceanic swell (long, smooth rolling swells)
-  { dir: [0.85, 0.52],  steepness: 0.13, wavelength: 72.0, speed: 1.0 },
-  // Secondary cross-swell (counter-angle creates natural interference pockets)
-  { dir: [0.45, -0.89], steepness: 0.11, wavelength: 46.0, speed: 1.18 },
-  // Intermediate wind sea (angled with prevailing wind)
-  { dir: [0.92, 0.38],  steepness: 0.11, wavelength: 30.0, speed: 1.35 },
-  // Cross-chop sea
-  { dir: [-0.62, 0.78], steepness: 0.09, wavelength: 20.0, speed: 1.55 },
-  // Short wind chop
-  { dir: [0.78, -0.62], steepness: 0.08, wavelength: 13.0, speed: 1.8 },
-  // High-frequency crest chop
-  { dir: [0.35, 0.94],  steepness: 0.06, wavelength: 8.5,  speed: 2.1 },
-  // Diagonal micro-swell
-  { dir: [-0.82, -0.57], steepness: 0.05, wavelength: 5.2, speed: 2.5 },
-  // Surface capillary agitation
-  { dir: [0.98, -0.18], steepness: 0.04, wavelength: 3.2,  speed: 3.0 }
+  // 1. Primary oceanic swell (majestic, smooth, broad deep-water rolling swell)
+  { dir: [0.85, 0.52],  steepness: 0.12, wavelength: 88.0, speed: 1.0 },
+  // 2. Secondary cross-swell (broad oceanic counter-swell creating gentle interference)
+  { dir: [0.42, -0.91], steepness: 0.10, wavelength: 56.0, speed: 1.15 },
+  // 3. Primary wind sea (steady rolling crests with rounded profiles)
+  { dir: [0.91, 0.41],  steepness: 0.09, wavelength: 38.0, speed: 1.30 },
+  // 4. Secondary wind wave (soft cross-wave)
+  { dir: [-0.58, 0.81], steepness: 0.08, wavelength: 26.0, speed: 1.48 },
+  // 5. Intermediate rolling chop
+  { dir: [0.76, -0.65], steepness: 0.06, wavelength: 18.0, speed: 1.68 },
+  // 6. Minor sea swell
+  { dir: [0.32, 0.95],  steepness: 0.05, wavelength: 13.0, speed: 1.90 },
+  // 7. Harmonious surface wave
+  { dir: [-0.85, -0.53], steepness: 0.04, wavelength: 9.5, speed: 2.20 },
+  // 8. Gentle crest wave
+  { dir: [0.95, -0.31], steepness: 0.03, wavelength: 7.2, speed: 2.50 }
 ];
 
 export const WEATHER_PRESETS = {
